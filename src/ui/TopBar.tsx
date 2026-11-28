@@ -15,7 +15,7 @@ import { RegionButton } from './Region';
 import { NotificationsButton } from './Notifications';
 import { RoomChip } from './Friends';
 import { topbarFolds, topbarRows } from './layout';
-import { uiRem } from '../game';
+import { isPhone, uiRem } from '../game';
 
 const SPEEDS: { s: Speed; label: string; Icon: typeof IconPause; key: string }[] = [
   { s: 0, label: 'Pause', Icon: IconPause, key: 'Space' },
@@ -26,6 +26,7 @@ const SPEEDS: { s: Speed; label: string; Icon: typeof IconPause; key: string }[]
 
 export function TopBar() {
   const game = useGameUpdates(200);
+  const matchLocked = game.match.active && !game.match.kept;
   const st = game.world.stats;
   const date = dateOf(Math.floor(game.world.displayTick));
   const WeatherIcon = WEATHER_ICON[st.weather.kind];
@@ -44,7 +45,8 @@ export function TopBar() {
   }, [moreOpen]);
   // A phone held upright (and a tablet in a room) wraps the bar onto more rows (F11); the panels
   // below it are placed by its height, however many rows a long city name takes.
-  const rows = topbarRows(uiRem(), !!game.net);
+  // A phone held sideways keeps one row, without the city's name (M49): it has width, not height.
+  const rows = topbarRows(uiRem(), !!game.net) && !(isPhone() && window.innerWidth > window.innerHeight);
   const bar = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = bar.current;
@@ -209,9 +211,11 @@ export function TopBar() {
           <button
             key={s}
             class={`btn icon ${game.speed === s ? 'active' : ''}`}
-            title={`${label} (${key})`}
+            // A quick match runs at one speed for everyone (M43): the buttons show it, nothing more.
+            title={matchLocked ? 'A quick match runs at one speed for everyone' : `${label} (${key})`}
             aria-label={label}
             data-testid={`speed-${s}`}
+            disabled={matchLocked}
             onClick={() => game.setSpeed(s)}
           >
             <Icon />

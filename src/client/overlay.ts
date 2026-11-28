@@ -113,8 +113,9 @@ export class OverlayController {
     const u = this.game.renderer.terrain.uniforms;
     this.game.renderer.coverageMap.show(null);
     this.roadsKey = '';
-    // Zone paint would hide the data underneath.
-    this.game.renderer.zones.group.visible = !map;
+    // Zone paint would hide the data underneath, but not while the zone tool is out (phase 6 end: a
+    // player who'd looked at the fire coverage map painted zones they couldn't see).
+    this.game.renderer.zones.group.visible = !map || this.game.tools?.activeId === 'zone';
     if (!map) {
       u.uOverlayOn.value = 0;
       this.last = null;

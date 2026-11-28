@@ -10,7 +10,13 @@ import { Sim } from './sim';
 import { isMonthStart, SPEED_TICKS_PER_SECOND, type Speed } from './time';
 import { partHashes } from './sync';
 import { Lockstep, type Applied } from './lockstep';
-import type { MainToWorker, SharedSnapshot, WorkerPerf, WorkerToMain } from './protocol';
+import type { MainToWorker, SharedSnapshot, WatchedRun, WorkerPerf, WorkerToMain } from './protocol';
+import { DesyncLog, type FoundingOptions } from './desyncLog';
+import type { Command, CommandLogEntry } from './commands';
+import type { RunEntry } from './runReplay';
+import { challengeDef, challengeScoreNow } from './systems/scenario';
+import type { RunFinal } from './save';
+import { checksum } from './sync';
 
 interface WorkerScope {
   postMessage(msg: unknown, transfer: Transferable[]): void;
@@ -25,10 +31,78 @@ let last = performance.now();
 const MAX_TICKS_PER_LOOP = 60;
 /** Shared city: milliseconds of ticks per loop when catching up (the loop runs every 50 ms). */
 const SHARED_BUDGET_MS = 35;
+/**
+ * Far behind (joining a busy city, M49): ticks run for most of each loop, and the page hears of them
+ * only every `BULK_FRAME_MS` (a frame's diff of everything changed since), so a slow phone spends its
+ * time catching up, not drawing each step on the way.
+ */
+const BULK_BUDGET_MS = 45;
+const BULK_FRAME_MS = 400;
+/** How far behind (ticks) counts as far, at least, and in seconds of the room's speed. */
+const BULK_BEHIND = 240;
+const BULK_SECONDS = 8;
+let bulk = false;
+let lastFrameAt = 0;
+/** A paused city on its own tells the page this often (ms) unless asked something (M49). */
+const IDLE_FRAME_MS = 1000;
+let wake = true;
 const perf: WorkerPerf = { tickMsAvg: 0, tickMsMax: 0, ticksPerSecond: 0, droppedTicks: 0 };
 let perfWindowStart = performance.now();
 let perfWindowTicks = 0;
 let perfWindowMax = 0;
+
+/**
+ * A quick match's clock (M43): when it started (this worker's performance clock) and the tick it ends
+ * at. The city runs towards the tick the time allows at the match speed; `stopAt` holds it.
+ */
+let match: { start: number; end: number } | null = null;
+const MATCH_TPS = SPEED_TICKS_PER_SECOND[3];
+
+/**
+ * A weekly challenge city's run (M44): the player's commands and the save points since it was founded,
+ * at their ticks, so the run can be posted and replayed. Kept in its saves (`meta.run`).
+ */
+let run: { entries: RunEntry[]; final?: RunFinal } | null = null;
+
+/**
+ * A challenge city whose challenge has just ended (M44): the run as it stood then, which is what gets
+ * posted (playing on afterwards adds entries, never changes it).
+ */
+function freezeRun(): void {
+  if (!run || run.final || !sim) return;
+  const sc = sim.state.scenario;
+  if (!sc || sc.status === 'playing' || !challengeDef(sim)) return;
+  run.final = { count: run.entries.length, end: sim.tick, hash: sim.hash(), score: challengeScoreNow(sim) };
+}
+
+/**
+ * Watching a challenge run (M44): the entries still to take, where it ends and what it claims; `rush`
+ * runs it to the end as fast as the worker can. Done once it reaches the end (the city then waits).
+ */
+let watching: (WatchedRun & { i: number; rush: boolean; done: boolean }) | null = null;
+/** How long a loop may spend rushing a watched run to its end before the page hears how it's going. */
+const RUSH_BUDGET_MS = 180;
+
+/** One tick of a watched run: the entries due now, then the tick (or, at the end, the verdict). */
+function watchTick(): boolean {
+  const w = watching!;
+  const s = sim!;
+  while (w.i < w.entries.length && w.entries[w.i]!.tick === s.tick) {
+    const e = w.entries[w.i++]!;
+    if ('settle' in e) s.save('', true);
+    else s.dispatch(e.cmd);
+  }
+  if (s.tick >= w.end) {
+    w.done = true;
+    speed = 0;
+    const hash = s.hash();
+    const score = challengeScoreNow(s);
+    post({ type: 'runDone', ok: hash === w.hash && score === w.score, hash, score, tick: s.tick });
+    return false;
+  }
+  timeTick(() => s.step());
+  return true;
+}
 
 /** The room's runner while the city is shared, and who this machine is. */
 let lockstep: Lockstep | null = null;
@@ -51,7 +125,14 @@ function timeTick(fn: () => void): void {
 
 function runTicks(n: number): void {
   if (!sim) return;
-  for (let i = 0; i < n; i++) timeTick(() => sim!.step());
+  if (watching) {
+    for (let i = 0; i < n && !watching.done; i++) watchTick();
+    return;
+  }
+  for (let i = 0; i < n; i++) {
+    timeTick(() => sim!.step());
+    if (run && !run.final) freezeRun();
+  }
 }
 
 /** Shared city: run towards the allowed tick within the time budget. */
@@ -68,8 +149,10 @@ function runShared(elapsed: number): void {
   due += (elapsed / 1000) * tps;
   // Paused (the room stopped where it is) or far behind: straight there.
   const catchUp = tps === 0 || ls.behind > Math.max(48, tps * 2);
+  bulk = ls.behind > Math.max(BULK_BEHIND, tps * BULK_SECONDS);
+  const budget = bulk ? BULK_BUDGET_MS : SHARED_BUDGET_MS;
   let n = catchUp ? Infinity : Math.floor(due);
-  while (n > 0 && ls.behind > 0 && performance.now() - t0 < SHARED_BUDGET_MS) {
+  while (n > 0 && ls.behind > 0 && performance.now() - t0 < budget) {
     n--;
     if (!catchUp) due--;
     timeTick(() => ls.run(1));
@@ -82,8 +165,23 @@ function runShared(elapsed: number): void {
   for (const [tick, sum] of ls.checksums)
     if (tick > lastChecksum) {
       post({ type: 'checksum', tick, sum });
+      desyncLog.sum(tick, sum);
       lastChecksum = tick;
     }
+}
+
+/**
+ * A quick match: run up to the tick the time since the start allows, never past it or the end, and
+ * catch up (a slow device, a background tab) as fast as the time budget lets.
+ */
+function runMatch(m: { start: number; end: number }): void {
+  if (!sim) return;
+  const t0 = performance.now();
+  const target = Math.min(m.end, Math.floor(((t0 - m.start) * MATCH_TPS) / 1000));
+  const behind = target - sim.tick;
+  bulk = behind > Math.max(BULK_BEHIND, MATCH_TPS * BULK_SECONDS);
+  const budget = bulk ? BULK_BUDGET_MS : SHARED_BUDGET_MS;
+  while (sim.tick < target && performance.now() - t0 < budget) timeTick(() => sim!.step());
 }
 
 function flush(): void {
@@ -102,8 +200,20 @@ function flush(): void {
   }
   if (lockstep) perf.behind = lockstep.behind;
   else delete perf.behind;
-  post({ type: 'frame', diff: sim.collectFrame(), perf: { ...perf }, speed });
+  // A quick match's city runs at the match speed between its start and its end (M43), whatever was chosen.
+  const shown: Speed = match ? (now >= match.start && sim.tick < match.end ? 3 : 0) : speed;
+  post({ type: 'frame', diff: sim.collectFrame(), perf: { ...perf }, speed: shown });
 }
+
+/**
+ * What a desync's replay needs (M41): this run's start, the room's events since and the hourly sums.
+ * `origin` is how the city was founded here, when it was (a fresh city, no custom map), so a city
+ * shared from its founding can be replayed from nothing at all.
+ */
+const desyncLog = new DesyncLog();
+let origin: FoundingOptions | null = null;
+/** Single player's saves since founding (each finishes the commute round under way): where in the log. */
+let originSaves: { tick: number; at: number }[] = [];
 
 /** The last error the loop reported, so a sim that fails every tick says so once, not 20 times a second. */
 let lastLoopError = '';
@@ -127,7 +237,10 @@ function step(): void {
   const elapsed = Math.min(250, now - last);
   last = now;
   if (lockstep) runShared(elapsed);
-  else if (sim && speed > 0) {
+  else if (match) runMatch(match);
+  else if (sim && watching?.rush && !watching.done) {
+    while (performance.now() - now < RUSH_BUDGET_MS && watchTick());
+  } else if (sim && speed > 0) {
     due += (elapsed / 1000) * SPEED_TICKS_PER_SECOND[speed];
     let n = Math.floor(due);
     if (n > MAX_TICKS_PER_LOOP) {
@@ -139,7 +252,18 @@ function step(): void {
     }
     if (n > 0) runTicks(n);
   }
-  if (sim) flush();
+  // Far behind, the page hears every BULK_FRAME_MS; the frame then carries everything since. A
+  // paused city on its own (M49) tells the page only after a message or every IDLE_FRAME_MS: its
+  // frames were empty, but each one woke the page's interface (a phone's battery).
+  const tell =
+    lockstep || match
+      ? !bulk || now - lastFrameAt >= BULK_FRAME_MS
+      : speed > 0 || wake || now - lastFrameAt >= IDLE_FRAME_MS;
+  if (sim && tell) {
+    lastFrameAt = now;
+    wake = false;
+    flush();
+  }
 }
 
 setInterval(loop, 50);
@@ -178,19 +302,38 @@ function share(s: Sim, lastSeq: number, eventHash?: number): void {
 
 function handle(msg: MainToWorker): void {
   switch (msg.type) {
-    case 'init':
+    case 'init': {
       lockstep = null;
+      match = null;
       player = 0;
+      desyncLog.clear();
       sim = Sim.create(msg.options, msg.map ?? null);
+      run = msg.options.challenge ? { entries: [] } : null;
+      watching = null;
+      // Founded here from options alone: a replay can found it again (never its name).
+      const { cityName: _name, editor, ...founding } = msg.options;
+      origin = msg.map || editor ? null : founding;
+      originSaves = [];
       sim.testMode = !!msg.testMode;
       post({ type: 'ready', snapshot: sim.snapshot() });
       break;
+    }
     case 'load':
       lockstep = null;
+      match = null;
       player = 0;
+      origin = null;
+      desyncLog.clear();
       // A save that can't be read leaves the worker empty; the page falls back to a fresh map.
       try {
         sim = Sim.fromSave(msg.save);
+        // A challenge city picks its run up where its save left it (M44).
+        const kept = msg.save.meta.run;
+        run =
+          sim.state.options.challenge && kept
+            ? { entries: [...kept.entries], ...(kept.final ? { final: { ...kept.final } } : {}) }
+            : null;
+        watching = null;
       } catch (err) {
         sim = null;
         post({ type: 'loadFailed', message: err instanceof Error ? err.message : String(err) });
@@ -215,7 +358,15 @@ function handle(msg: MainToWorker): void {
       // A resync keeps the page's city and brings it up to date in the next frame.
       if (msg.resync && old) sim.takeOverFrom(old);
       player = msg.player;
+      origin = null;
       share(sim, msg.snapshot.seq, msg.snapshot.eventHash);
+      desyncLog.begin({
+        tick: sim.tick,
+        seq: msg.snapshot.seq,
+        sum: checksum(sim),
+        eventHash: lockstep!.eventHash,
+        rules: sim.rules,
+      });
       applied = [];
       post({ type: 'ready', snapshot: sim.snapshot() });
       break;
@@ -230,7 +381,30 @@ function handle(msg: MainToWorker): void {
       share(sim, msg.lastSeq);
       {
         // The city the room is made from: this machine carries on from it as the others will.
+        // Its commands since founding, with its saves among them (a save settles the city).
+        let pre: (CommandLogEntry | { tick: number; settle: true })[] | undefined;
+        if (origin) {
+          pre = [];
+          let k = 0;
+          sim.log.forEach((e, i) => {
+            while (k < originSaves.length && originSaves[k]!.at <= i)
+              pre!.push({ tick: originSaves[k++]!.tick, settle: true });
+            pre!.push(e);
+          });
+          while (k < originSaves.length) pre.push({ tick: originSaves[k++]!.tick, settle: true });
+        }
         const save = lockstep!.rebirth();
+        sim = lockstep!.sim;
+        desyncLog.begin({
+          tick: sim.tick,
+          seq: msg.lastSeq,
+          sum: checksum(sim),
+          eventHash: lockstep!.eventHash,
+          rules: sim.rules,
+          ...(origin ? { founded: origin, pre } : {}),
+        });
+        // The reborn city's own log starts here: a later share isn't "from its founding" any more.
+        origin = null;
         post({
           type: 'snapshot',
           tick: sim.tick,
@@ -239,13 +413,22 @@ function handle(msg: MainToWorker): void {
         });
       }
       break;
+    case 'desyncLog':
+      post({ type: 'reply', id: msg.id, result: lockstep ? desyncLog.data() : null });
+      break;
     case 'perturb':
-      // One draw from a random stream: nothing visible changes, but the next checksum differs.
-      if (sim?.testMode) sim.rng.growth.next();
+      // One draw from a random stream: nothing visible changes, but a later checksum differs (a draw
+      // can be absorbed for a while). Or an id skipped, which the next hourly checksum always shows
+      // (and no invariant minds, unlike a dollar that isn't in the ledger).
+      if (sim?.testMode) {
+        if (msg.kind === 'id') sim.state.nextId += 1;
+        else sim.rng.growth.next();
+      }
       break;
     case 'unshare':
       // This copy is the player's own now (F9): their undo, no room rules, no other players.
       sim?.leaveShared();
+      desyncLog.clear();
       lockstep = null;
       player = 0;
       applied = [];
@@ -254,7 +437,9 @@ function handle(msg: MainToWorker): void {
     case 'stamped': {
       if (!lockstep) return;
       for (const e of msg.events) {
-        if (lockstep.push(e) === 'late') post({ type: 'late', tick: e.tick, seq: e.seq });
+        const r = lockstep.push(e);
+        if (r === 'late') post({ type: 'late', tick: e.tick, seq: e.seq });
+        if (r !== 'repeat') desyncLog.event(e);
       }
       lockstep.allow(msg.allow);
       break;
@@ -270,7 +455,13 @@ function handle(msg: MainToWorker): void {
         });
         return;
       }
+      const tick = sim.tick;
       const result = sim.dispatch(msg.cmd);
+      // A challenge's run keeps what the city took (M44).
+      if (run && result.ok) {
+        run.entries.push({ tick, cmd: JSON.parse(JSON.stringify(msg.cmd)) as Command });
+        freezeRun();
+      }
       flush();
       post({ type: 'reply', id: msg.id, result });
       break;
@@ -287,6 +478,12 @@ function handle(msg: MainToWorker): void {
       speed = msg.speed;
       due = 0;
       break;
+    case 'matchClock':
+      if ('off' in msg) match = null;
+      else if ('stop' in msg) match = sim ? { start: -Infinity, end: sim.tick } : null;
+      else match = { start: performance.now() + msg.startIn, end: msg.endTick };
+      bulk = false;
+      break;
     case 'advance':
       if (!sim) return;
       // A shared city's time is the room's: advancing on one machine would split it.
@@ -296,12 +493,54 @@ function handle(msg: MainToWorker): void {
       break;
     case 'save':
       if (!sim) return;
-      post({ type: 'reply', id: msg.id, result: sim.save(new Date().toISOString(), !lockstep) });
+      // A single player's save settles the city: a replay from its founding does the same here.
+      if (!lockstep && origin) originSaves.push({ tick: sim.tick, at: sim.log.length });
+      {
+        const file = sim.save(new Date().toISOString(), !lockstep);
+        // A challenge city's save settles it too, and carries its run (M44).
+        if (run && !lockstep) {
+          run.entries.push({ tick: sim.tick, settle: true });
+          file.meta.run = { entries: run.entries, ...(run.final ? { final: run.final } : {}) };
+          const week = sim.state.options.challenge?.week;
+          if (week !== undefined) file.meta.challenge = { week, done: !!run.final };
+        }
+        post({ type: 'reply', id: msg.id, result: file });
+      }
+      break;
+    case 'challengeRun':
+      // The run so far (M44): its entries, the tick now, and the city's hash and score there.
+      if (!sim) return;
+      post({
+        type: 'reply',
+        id: msg.id,
+        result: !run
+          ? null
+          : run.final
+            ? { ...run.final, entries: run.entries.slice(0, run.final.count), final: true }
+            : {
+                entries: run.entries,
+                end: sim.tick,
+                hash: sim.hash(),
+                score: challengeScoreNow(sim),
+                final: false,
+              },
+      });
+      break;
+    case 'watchRun':
+      if (!sim) return;
+      // The run's own entries now; the player's city takes none of its own (the page is read-only).
+      run = null;
+      watching = { ...msg.run, i: 0, rush: false, done: false };
+      break;
+    case 'watchRush':
+      if (watching) watching.rush = msg.on;
       break;
   }
 }
 
 ctx.onmessage = (e: MessageEvent<MainToWorker>) => {
+  // Anything the page asks may change the city: the next loop tells the page at once.
+  wake = true;
   try {
     handle(e.data);
   } catch (err) {

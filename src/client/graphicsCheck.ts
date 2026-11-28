@@ -12,6 +12,7 @@ export const GRAPHICS_PRESETS: Record<
   GraphicsPreset,
   Pick<Settings, 'quality' | 'shadows' | 'drawDistance'>
 > = {
+  phone: { quality: 'phone', shadows: false, drawDistance: 'near' },
   low: { quality: 'low', shadows: false, drawDistance: 'near' },
   medium: { quality: 'medium', shadows: true, drawDistance: 'medium' },
   high: { quality: 'high', shadows: true, drawDistance: 'medium' },
@@ -33,8 +34,56 @@ export const CHECK = {
 /** Renderers that draw on the CPU: always the light preset. */
 const SOFTWARE = /swiftshader|llvmpipe|softpipe|software|basic render driver/i;
 
+/** What kind of device the game runs on (M49): a phone, a tablet, or a computer. */
+export type DeviceKind = 'phone' | 'tablet' | 'computer';
+
+export interface DeviceInfo {
+  /** The browser's user agent. */
+  ua: string;
+  /** Touch points the screen takes (0 on most computers). */
+  touchPoints: number;
+  /** Whether the main pointer is coarse (a finger). */
+  coarse: boolean;
+  /** The screen's size in CSS pixels. */
+  screenW: number;
+  screenH: number;
+}
+
+/**
+ * A phone, a tablet or a computer, from what the browser says it is and its screen and pointer
+ * (M49). iPadOS reports itself as a Mac, so a "Mac" with a touch screen is a tablet; a touch screen
+ * whose short side is under 600 px is a phone whatever it says.
+ */
+export function deviceKind(d: DeviceInfo): DeviceKind {
+  const short = Math.min(d.screenW, d.screenH);
+  if (/iPhone|iPod|Windows Phone/i.test(d.ua)) return 'phone';
+  if (/Android/i.test(d.ua)) return /Mobile/i.test(d.ua) || short < 600 ? 'phone' : 'tablet';
+  if (/iPad|Tablet/i.test(d.ua) || (/Macintosh/i.test(d.ua) && d.touchPoints > 1))
+    return short < 600 ? 'phone' : 'tablet';
+  if (d.coarse && d.touchPoints > 0 && short > 0)
+    return short < 600 ? 'phone' : short < 1050 ? 'tablet' : 'computer';
+  return 'computer';
+}
+
+/** This device's kind (a computer where there is no window to ask). */
+export function currentDevice(): DeviceKind {
+  try {
+    return deviceKind({
+      ua: navigator.userAgent,
+      touchPoints: navigator.maxTouchPoints || 0,
+      coarse: typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches,
+      screenW: screen.width,
+      screenH: screen.height,
+    });
+  } catch {
+    return 'computer';
+  }
+}
+
 export interface CheckResult {
   preset: GraphicsPreset;
+  /** The kind of device it was decided for (M49; a computer when not known). */
+  device?: DeviceKind;
   /** Median frame time measured at the high preset (0 when the renderer alone decided). */
   frameMs: number;
   frames: number;
@@ -43,14 +92,24 @@ export interface CheckResult {
   reason: string;
 }
 
-/** The preset for a measured median frame time, the graphics renderer's name and CPU cores. */
+/**
+ * The preset for a measured median frame time, the graphics renderer's name and CPU cores, on a
+ * device of this kind (M49): a phone is always Phone; a tablet at most Medium, and Phone when slow.
+ */
 export function choosePreset(
   frameMs: number,
   gpu: string,
   cores: number,
+  device: DeviceKind = 'computer',
 ): { preset: GraphicsPreset; reason: string } {
+  if (device === 'phone') return { preset: 'phone', reason: 'a phone' };
   if (SOFTWARE.test(gpu)) return { preset: 'low', reason: 'software rendering' };
   const fps = `about ${Math.round(1000 / Math.max(frameMs, 1))} fps`;
+  if (device === 'tablet')
+    return {
+      preset: frameMs > CHECK.mediumMs ? 'phone' : frameMs > CHECK.highMs ? 'low' : 'medium',
+      reason: `a tablet, ${fps}`,
+    };
   if (frameMs > CHECK.mediumMs) return { preset: 'low', reason: fps };
   if (frameMs > CHECK.highMs) return { preset: 'medium', reason: fps };
   // A dual-core machine may draw the menu smoothly but struggles once a big city is ticking.
@@ -79,12 +138,13 @@ export class GraphicsCheck {
   constructor(
     readonly gpu: string,
     private readonly cores: number,
+    private readonly device: DeviceKind = 'computer',
   ) {}
 
   /** `now` is the frame's timestamp (ms); frames while the tab is hidden are throttled and skipped. */
   frame(now: number, visible: boolean): CheckResult | null {
     if (this.result) return null;
-    if (SOFTWARE.test(this.gpu)) return this.finish(0);
+    if (SOFTWARE.test(this.gpu) || this.device === 'phone') return this.finish(0);
     if (!visible) {
       this.last = -1;
       return null;
@@ -104,8 +164,8 @@ export class GraphicsCheck {
   }
 
   private finish(frameMs: number): CheckResult {
-    const { preset, reason } = choosePreset(frameMs, this.gpu, this.cores);
-    this.result = { preset, frameMs, frames: this.deltas.length, gpu: this.gpu, reason };
+    const { preset, reason } = choosePreset(frameMs, this.gpu, this.cores, this.device);
+    this.result = { preset, device: this.device, frameMs, frames: this.deltas.length, gpu: this.gpu, reason };
     return this.result;
   }
 }

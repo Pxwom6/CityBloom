@@ -1,4 +1,5 @@
 import { Group, Mesh, MeshLambertMaterial } from 'three';
+import { releaseAfterUpload } from './release';
 import type { ClientWorld, NetChanges } from '../client/world';
 import { Curve, angleOf, v2, type Vec2 } from '../sim/geom';
 import { GeoBuffer, mergeChunks, type GeoChunk } from './geoBuffer';
@@ -390,13 +391,21 @@ ${GRADE_GLSL}`,
       }
       if (!c.keys.size) continue;
       const parts = [...c.keys].sort().map((k) => this.elements.get(k)!.geo);
-      const mesh = new Mesh(mergeChunks(parts), this.material);
+      const geometry = mergeChunks(parts);
+      releaseAfterUpload(geometry);
+      const mesh = new Mesh(geometry, this.material);
       mesh.receiveShadow = true;
       mesh.name = `roads-${ck}`;
       c.mesh = mesh;
       this.group.add(mesh);
     }
     this.dirtyChunks.clear();
+  }
+
+  /** Build every road chunk's mesh again (the GPU's context came back, M49). */
+  redrawAll(): void {
+    for (const ck of this.chunks.keys()) this.dirtyChunks.add(ck);
+    this.flush();
   }
 
   /** Painted junctions (M27): approaches with a zebra crossing and with a give-way line, by node. */

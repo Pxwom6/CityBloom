@@ -10,6 +10,7 @@ import { formatNumber, useGameUpdates } from './hooks';
 import { IconHistory } from './icons';
 import { offersRegionHistory } from '../client/regionHistory';
 import { RegionAtWar } from './RegionHistory';
+import { TimelapseSection } from './Timelapse';
 
 type Range = 'all' | 'decade' | 'recent';
 const RANGES: { id: Range; name: string; months: number }[] = [
@@ -101,7 +102,7 @@ const FIGURES: Figure[] = [
 /** "Mar, Year 3" for a month index since the city began (fractional months round down). */
 export const monthName = monthLabel;
 
-function eventLabel(e: Chronicle['events'][number]): string {
+export function eventLabel(e: Chronicle['events'][number]): string {
   if (e.kind === 'atom') return atomEventText(e.ref);
   if (e.kind === 'election') return e.ref === 'won' ? 'Won the election' : 'Lost the election';
   if (e.kind === 'project')
@@ -209,6 +210,7 @@ export function HistoryPanel() {
             ))}
           </nav>
           <div class="tab-body" data-testid="history-charts">
+            <TimelapseSection />
             {c.step > 1 && (
               <p class="note">
                 Each point averages {c.step} months: older cities keep their whole story in fewer points.

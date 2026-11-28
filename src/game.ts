@@ -1,4 +1,5 @@
 import { UNIT, type RegionWarRules, type UnitKind } from './data/war';
+import { touchScreen, touchWords } from './client/touchWords';
 import { MapEditor } from './client/editor';
 import type { SimClient } from './client/simClient';
 import type { ClientWorld } from './client/world';
@@ -8,7 +9,7 @@ import type { Command, CommandResult } from './sim/commands';
 import type { WorkerPerf } from './sim/protocol';
 import { MONTH_NAMES, SPEED_TICKS_PER_SECOND, dateOf, type Speed } from './sim/time';
 import { ToolManager } from './tools/manager';
-import { CIVIC } from './data/civic';
+import { CIVIC, LOOK_HASH } from './data/civic';
 import { MILESTONES } from './data/progression';
 import { ACHIEVEMENTS } from './data/achievements';
 import type { Advice } from './sim/systems/advisors';
@@ -43,10 +44,17 @@ import { recordWin } from './client/scenarioProgress';
 import { AppUpdates } from './client/pwa';
 import type { AppInstall } from './client/install';
 import { SaveKeeper, type PersistentStorage } from './client/keepSaves';
-import { GRAPHICS_PRESETS, GraphicsCheck, gpuName, type CheckResult } from './client/graphicsCheck';
+import {
+  GRAPHICS_PRESETS,
+  GraphicsCheck,
+  currentDevice,
+  gpuName,
+  type CheckResult,
+} from './client/graphicsCheck';
 import { DEFAULT_FOV, type PhotoView } from './render/renderer';
-import { TUTORIAL, pickTip, type Tip } from './client/tutorial';
-import { barsClassWith, widthClass } from './ui/layout';
+import { pickTip, type Tip } from './client/tutorial';
+import { TutorialRunner } from './client/tutorialRunner';
+import { barsClassWith, phoneLayout, widthClass } from './ui/layout';
 import { Multiplayer, relayUrl, signalling } from './net/multiplayer';
 import {
   RegionLink,
@@ -59,7 +67,7 @@ import {
 } from './net/regionLink';
 import { P2PHost, p2pConnect, wallClock } from './net/p2p';
 import { webSocketLink, type Link } from './net/link';
-import { RegionRoom, MemoryRegionStore } from '../relay/region';
+import { RegionRoom, MemoryRegionStore, type RegionMeta } from '../relay/region';
 import { codeKind, formatInvite, inviteProblem, makeCode, makeKey, parseInvite } from '../relay/protocol';
 import type { RegionReport } from './sim/systems/region';
 import { RegionOps, resolveOp } from './client/ops';
@@ -67,8 +75,13 @@ import { AtomRegion } from './client/atomRegion';
 import { AtomUi, type WarTab } from './client/atomUi';
 import { FriendsWarClient } from './client/friendsWar';
 import { RegionReplays } from './client/regionReplays';
+import { MatchClient, saveMatchSession, type MatchSession } from './client/matchClient';
+import { MATCH, type MatchSettings } from './data/match';
 import { replayVerdict, type ReplayVerdict } from './client/regionHistory';
-import { IS_TEST_BUILD } from './config';
+import { BUILD_ID, IS_TEST_BUILD } from './config';
+import { isIOS } from './client/platform';
+import { markAlive } from './client/alive';
+import { frameCap, frameDue } from './client/frameCap';
 import { forgetRegionSecret, keepRegionSecret } from './client/profile';
 import type { RegionBinding } from './sim/save';
 import { commandShape, shapesMeet } from './net/shapes';
@@ -87,6 +100,18 @@ import { atomBeats, blastSounds } from './render/atomFx';
 import { asSentence, nameInSentence, shelterSentence, unitsKnockedOut } from './ui/warWords';
 import { seasonNotice } from './ui/weather';
 import type { OverlayResult } from './sim/systems/overlays';
+import { relayHttpBase, reportProblem, type Reporter } from './client/reports';
+import { ChallengeClient, keepBest, loadGroups, type ChallengeNow, type PostReply } from './client/challenge';
+import type { ChallengeDef } from './data/challenges';
+import { TimelapseRecorder } from './client/timelapse';
+import { MyBuildings, REGION_MODEL_CHARS } from './client/myBuildings';
+import { RoomModels } from './client/roomModels';
+import { WorkshopState } from './client/workshopState';
+import { SubmitClient } from './client/submissions';
+import { fitsTarget, targetOfDef } from './models/customCheck';
+import type { BakedModel } from './models/baked';
+import type { RoomMsg } from '../relay/protocol';
+import { REPORT_CAPS, type ReportDesync } from '../relay/reports';
 
 type Listener = () => void;
 
@@ -129,6 +154,18 @@ function layoutUi(): void {
   const rem = window.innerWidth / (16 * uiScale);
   ui.dataset.width = widthClass(rem);
   ui.dataset.bars = barsClassWith(rem, extraTools);
+  // Phones (M49): the bars and panels change shape, upright and sideways.
+  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+  phone = phoneLayout(window.innerWidth, window.innerHeight, coarse);
+  if (phone) ui.dataset.phone = '';
+  else delete ui.dataset.phone;
+  ui.dataset.orient = window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
+}
+
+/** Whether the phone layout is on (M49), as last laid out. */
+let phone = false;
+export function isPhone(): boolean {
+  return phone;
 }
 
 /** Toolbar buttons beyond a peaceful city's (M34: the Military category with war on). */
@@ -160,7 +197,16 @@ export type Screen =
   | 'settings'
   | 'maps'
   /** Play with friends (M30). */
-  | 'friends';
+  | 'friends'
+  /** Report a problem (M41). */
+  | 'report'
+  /** Learn: short lessons on prepared towns (M42). */
+  | 'learn'
+  | 'match'
+  /** This week's challenge (M44). */
+  | 'challenge'
+  /** Send an idea or a building in, my submissions, accepted ideas (M48). */
+  | 'submit';
 
 /** Something the player has clicked on and is inspecting. */
 export interface Selection {
@@ -194,6 +240,8 @@ export class Game {
   hint: ToolHint | null = null;
   /** A tool's question before it acts (P2), shown at the pointer with its two buttons. */
   question: ToolQuestion | null = null;
+  /** The kind of pointer last pressed on the map: 'mouse', 'touch' or 'pen' (M49: touch confirms costs). */
+  pointerType = 'mouse';
   /** The war room's tab (kept here so a card, a chip or a key can open the room on the Bomb tab). */
   warTab: WarTab = 'forces';
   /** Open side panel (budget, and later data maps, advisors...). */
@@ -214,6 +262,8 @@ export class Game {
     | 'war'
     /** The battle map (M39): commanding a live battle with a friend, or watching one. */
     | 'battleMap'
+    /** My Buildings (M46): the player's own models. */
+    | 'buildings'
     | null = null;
   /** A scenario's brief, shown when it begins (M18). */
   scenarioBrief = false;
@@ -309,6 +359,8 @@ export class Game {
       // Operations against friends' cities waiting for the region's verdict (M37): this page asks.
       const ops = diff.stats.war?.intel?.regionOps;
       if (ops?.length && !this.inMenu() && !this.readOnly && !this.net) this.ops.check(ops);
+      // A quick match (M43): the clock on screen, Race's target, the timer's end.
+      if (!this.inMenu() && !this.readOnly) this.match.frame(diff.stats.tick, diff.stats.population);
       // The city's own race for the atom bomb (M40): the region hears when its stage changes.
       if (!this.inMenu() && !this.readOnly && !this.net) this.atomRegion.frame(diff.stats.war?.atom?.stage);
       const sel = this.selected;
@@ -353,6 +405,14 @@ export class Game {
     this.overlay = new OverlayController(this);
     this.districts = new DistrictView(this);
     this.regionView = new RegionView(this);
+    // Players' own models (M46): drawn when here, and a friend's only with friends' buildings shown.
+    renderer.civics.customLook = (hash, def) => this.customModel(hash, def);
+    this.buildings.inUse = () => this.looksInCity();
+    this.workshop.onChange = () => this.notify();
+    this.buildings.onChange = () => {
+      this.renderer.civics.redrawLooks();
+      this.notify();
+    };
     renderer.controller.focus = () => {
       const hw = this.world.gen.params.highway;
       return { x: 260, z: hw.connectZ };
@@ -375,6 +435,9 @@ export class Game {
   }
 
   notify(): void {
+    // What the tutorial waits for is noted as it opens, not at the next two-second check (phase 6 end).
+    // (Absent while the constructor runs.)
+    this.tutorial?.noteSeen();
     this.listeners.forEach((l) => l());
   }
 
@@ -384,6 +447,9 @@ export class Game {
         ok: false,
         reason: 'You’re visiting a neighbour’s city: nothing can be changed here',
       });
+    // A quick match's city is built only while the match plays (M43).
+    const matchWhy = this.match.refusal();
+    if (matchWhy) return Promise.resolve({ ok: false, reason: matchWhy });
     // In a shared city the room orders every command, so all the players' games apply it alike;
     // until it comes back its outline shows as pending (M31).
     if (!this.net) return this.client.command(cmd);
@@ -545,8 +611,48 @@ export class Game {
     return this.regionCode ? formatInvite({ code: this.regionCode, key: this.regionKey }) : null;
   }
   private regionHost: P2PHost | null = null;
+  /** The region a peer-to-peer host's browser runs (M43: its record goes with a rematch's reload). */
+  private regionHub: RegionRoom | null = null;
   /** Looking round another player's city in the region: nothing can be changed (M32). */
   readOnly = false;
+  /** Problem reports (M41): the page's reporter, set at boot (null in tests that make a Game alone). */
+  reporter: Reporter | null = null;
+
+  /**
+   * A desync in a shared city (M41): the page that fell out of step files a report, and so does the
+   * pacer's (whose run agrees with the room by definition, and which, for a city founded on its
+   * machine, carries everything a replay needs). Asked of the worker before the catching-up snapshot
+   * replaces this run.
+   */
+  private async reportCityDesync(m: Extract<RoomMsg, { t: 'resync' }>, you: number): Promise<void> {
+    const mine = m.player === you;
+    if (!mine && m.pacer !== you) return;
+    const log = await this.client.desyncLog().catch(() => null);
+    const sums = m.sums ?? [];
+    const last = sums.at(-1);
+    reportProblem(
+      'desync',
+      {
+        message: mine
+          ? 'A shared city fell out of step on this machine'
+          : 'A shared city fell out of step on another machine (this is the pacer’s side)',
+        stack: '',
+      },
+      {
+        desync: {
+          where: 'city',
+          tick: m.tick ?? last?.[0] ?? 0,
+          mine: last ? (mine ? last[2] : last[1]) : '',
+          theirs: last ? (mine ? last[1] : last[2]) : '',
+          ...(log ? { sums: log.sums, cut: log.cut } : {}),
+          theirSums: sums.map(([t, pacer, player]) => [t, mine ? pacer : player] as [number, string]),
+          // Checked again by the report's cleaning: founding options without a seed aren't a start.
+          ...(log?.start ? { start: log.start as unknown as NonNullable<ReportDesync['start']> } : {}),
+          ...(log && !log.cut ? { events: log.events } : {}),
+        },
+      },
+    );
+  }
   /** Battles away from the city (M35): fought by this page when the city's forces arrive. */
   readonly away = new AwayBattles({
     query: (q) => this.client.query(q),
@@ -673,12 +779,80 @@ export class Game {
     keepBattle,
     changed: () => this.notify(),
   });
+  /**
+   * A quick match (M43): the match as the region room tells it, the city's clock, the scoreboard, and
+   * the rematch's reload into the next round.
+   */
+  readonly match: MatchClient = new MatchClient({
+    matchClock: (c) => this.client.matchClock(c),
+    hash: () => this.client.query<string>({ type: 'hash' }),
+    tick: () => this.world.stats.tick,
+    population: () => this.world.stats.population,
+    // The speed buttons show the match's speed while it plays (the player can't change it).
+    showSpeed: (playing) => {
+      this.speed = playing ? MATCH.speed : 0;
+    },
+    notify: () => this.notify(),
+    rematch: (next) => this.toNextRound(next),
+    ...(IS_TEST_BUILD ? { log: (line: string) => console.info(`[match] ${line}`) } : {}),
+  });
   /** In the battle viewer, a replay of a live battle: how its run ended against the battle as fought. */
   replayCheck: { verdict: ReplayVerdict; step: number; want: number } | null = null;
   /** The battle viewer starts its battle this many frames after the town is first drawn (M35). */
   viewerStart = 0;
   /** Watching a battle away from the city (M35, `?battle=`): its record and the slot to go back to. */
   viewing: { record: BattleRecord; back: string | null } | null = null;
+  /** The city's timelapse (M45): small frames from fixed views, kept on this device as it plays. */
+  readonly timelapse = new TimelapseRecorder(this);
+  /** Make timelapse's card is open (M45). */
+  timelapseCard = false;
+  /** The player's own models, and friends' that came with a city or a room (M46). */
+  readonly buildings = new MyBuildings();
+  /** Models passed between players in a shared city (M46). */
+  readonly roomModels = new RoomModels(this);
+  /** My buildings' tab (M47): the player's models, or the Workshop. */
+  buildingsTab: 'mine' | 'workshop' = 'mine';
+  /** Where the player is in the Workshop (M47). */
+  readonly workshop = new WorkshopState();
+
+  /** Open the Workshop (M47): My buildings on its Workshop tab. */
+  openWorkshop(): void {
+    this.buildingsTab = 'workshop';
+    if (this.panel !== 'buildings') this.openPanel('buildings');
+    else this.notify();
+  }
+  /** The weekly challenge's board (M44); offline (no relay), the challenge still plays. */
+  readonly challenges = new ChallengeClient(relayHttpBase(relayUrl()));
+  /** Ideas and buildings sent in (M48). */
+  readonly submissions = new SubmitClient(relayHttpBase(relayUrl()));
+  /** What the Send it in screen opens on: a tab, and a building of the player's to send. */
+  submitDraft: { tab: 'send' | 'mine' | 'accepted'; building: string | null } = {
+    tab: 'send',
+    building: null,
+  };
+
+  /** Open Send it in (M48), on a tab or with a building of the player's ready to send. */
+  openSubmit(o: { tab?: 'send' | 'mine' | 'accepted'; building?: string } = {}): void {
+    this.submitDraft = { tab: o.tab ?? 'send', building: o.building ?? null };
+    this.openScreen('submit');
+  }
+  /** This week's challenge as the board last told it (M44), for the menu and the challenge screen. */
+  challengeNow: ChallengeNow | null = null;
+  /** In a challenge city: posting its run, and what the board said (M44). */
+  challengePost: { busy: boolean; reply: PostReply | null } = { busy: false, reply: null };
+  /**
+   * Watching a weekly challenge run (M44, `?challengeRun=`): whose, what it claims, where it ends, and
+   * once it has, whether it came to the same city.
+   */
+  watchingRun: {
+    id: number;
+    name: string;
+    week: number;
+    score: number;
+    end: number;
+    rush: boolean;
+    result: { ok: boolean; score: number } | null;
+  } | null = null;
   /** The region this city stands in, kept in its saves (F6); null when it stands in none. */
   boundRegion: RegionBinding | null = null;
 
@@ -721,7 +895,13 @@ export class Game {
     return {
       command: (cmd) => this.client.command(cmd),
       report: () => this.client.query<RegionReport>({ type: 'regionReport' }),
-      save: () => this.client.save(),
+      save: async () => {
+        const s = await this.client.save();
+        // The models its buildings wear, so a friend visiting sees them (M46), within the region's cap.
+        const models = this.buildings.forSave(this.looksInCity(), REGION_MODEL_CHARS);
+        if (models.length) s.meta.models = models;
+        return s;
+      },
       cityName: () => this.world.stats.cityName,
       thumb: () => this.thumbnail(),
       battle: (input, meta) => this.takeBattle(input, meta),
@@ -814,6 +994,35 @@ export class Game {
     const link = this.region;
     if (!link) return;
     for (const r of await unpostedBattles()) if (r.postTo !== undefined) link.sendBattle(r.postTo, r.input);
+  }
+
+  /**
+   * A picture of the game for "Report a problem" (M41): the 3D view only (the interface is drawn over
+   * it, never in it), at most 960 pixels wide, as a JPEG small enough for the report's cap.
+   */
+  reportShot(): string | null {
+    try {
+      this.renderer.frame(0);
+      const src = this.renderer.canvas;
+      if (!src.width || !src.height) return null;
+      for (const [width, quality] of [
+        [960, 0.72],
+        [800, 0.6],
+        [640, 0.5],
+      ] as const) {
+        const c = document.createElement('canvas');
+        c.width = Math.min(width, src.width);
+        c.height = Math.round((c.width * src.height) / src.width);
+        const ctx = c.getContext('2d');
+        if (!ctx) return null;
+        ctx.drawImage(src, 0, 0, c.width, c.height);
+        const url = c.toDataURL('image/jpeg', quality);
+        if (url.length <= REPORT_CAPS.shot) return url;
+      }
+      return null;
+    } catch {
+      return null;
+    }
   }
 
   /** A small picture of the city as the camera sees it, for the region view. */
@@ -921,6 +1130,10 @@ export class Game {
     const link = new RegionLink(this.cityPort(), connect, {
       mayor: profile.name,
       color: profile.color,
+      // A quick match's city reports every few seconds, its picture every minute (M43).
+      ...(this.match.active
+        ? { reportEvery: MATCH.reportMs, saveEvery: MATCH.saveMs, thumbEvery: MATCH.thumbMs }
+        : {}),
       // The region's fair clock caps the war clock (M37); a test build's spec that fast-forwards its
       // cities far past the region's 1× pace may turn it off (localStorage `citybloom.fairClock`).
       ...(IS_TEST_BUILD && fairClockOff() ? { fairClock: false } : {}),
@@ -933,6 +1146,7 @@ export class Game {
     this.friends.attach(link);
     this.atomRegion.attach(link);
     this.replays.attach(link);
+    if (this.match.active) this.match.attach(link);
     // The race among friends is in the notification log, and the bomb in hand, a launch, a bomb fired
     // or fallen are red alerts (`raceNotice`); any other line of the room's is a toast.
     link.onNotice = (t) => {
@@ -996,6 +1210,8 @@ export class Game {
         void this.repostBattles();
       } else if (link.state !== 'in') welcomed = false;
       if (link.state === 'closed' && this.region === link) {
+        // A quick match whose region went (its peer-to-peer host left): it ends here as it stood.
+        if (this.match.active && started) this.match.closed(link.error ?? 'The match’s region closed');
         if (link.error && started) this.toast(link.error, 'bad', 8000);
         // The region shut for good (its host left it): the city's saves no longer name it (F10). One
         // that no longer exists is let go too, if it's the one the city is bound to (M37: its fair
@@ -1034,12 +1250,14 @@ export class Game {
     this.friends.detach();
     this.atomRegion.detach();
     this.replays.detach();
+    this.match.detach();
     link?.leave();
     // A region in this browser closes with it, and its cities are told (F10).
     this.regionHost?.close(
       `${loadProfile().name}’s region closed: it ran in their browser. Your city keeps its neighbours as they last were.`,
     );
     this.regionHost = null;
+    this.regionHub = null;
     if (say) {
       // Left for good: the city's saves no longer name the region.
       this.forgetRegion();
@@ -1047,6 +1265,151 @@ export class Game {
     }
     this.notify();
   }
+  // ---- Quick matches (M43) ----------------------------------------------------------------------
+
+  /**
+   * Open a quick match with this city, founded on the match's seed (online, or in this browser); a
+   * peer-to-peer host coming back for a rematch opens the region again from its record (`hub`).
+   */
+  async hostMatch(
+    kind: 'online' | 'p2p',
+    settings: MatchSettings,
+    again?: { invite: string; slot: number; secret: string; hub: unknown },
+  ): Promise<boolean> {
+    if (this.region || this.net || this.readOnly) return false;
+    const inv = again ? parseInvite(again.invite) : null;
+    const code = inv?.code ?? makeCode(kind);
+    const key = kind === 'p2p' ? (inv?.key ?? makeKey()) : null;
+    try {
+      let connect: () => Promise<Link>;
+      if (kind === 'online') {
+        const url = relayUrl();
+        if (!url) throw new Error("Online matches aren't set up yet: start one in this browser instead");
+        connect = () => webSocketLink(`${url}/region/${code}${again ? '' : '?create=1'}`);
+      } else {
+        const store = new MemoryRegionStore();
+        if (again?.hub) store.meta = again.hub as RegionMeta;
+        const hub = new RegionRoom(
+          code,
+          'p2p',
+          store,
+          {
+            now: wallClock,
+            later: (ms, fn) => {
+              const t = setTimeout(fn, ms);
+              return () => clearTimeout(t);
+            },
+          },
+          IS_TEST_BUILD ? { testMatches: true } : {},
+        );
+        this.regionHub = hub;
+        this.regionHost = new P2PHost(code, key!, signalling(), null, hub);
+        await this.regionHost.listen();
+        const host = this.regionHost;
+        connect = () => host.connectSelf();
+      }
+      await this.attachRegion(
+        code,
+        key,
+        connect,
+        again
+          ? { rejoin: { slot: again.slot, secret: again.secret } }
+          : { create: { name: 'Quick match', match: settings } },
+        kind === 'p2p',
+      );
+      return true;
+    } catch (err) {
+      this.leaveRegion(false);
+      this.toast(err instanceof Error ? err.message : String(err), 'bad', 8000);
+      return false;
+    }
+  }
+
+  /** Bring this match city into its match by the invite (as its old self after a rematch's reload). */
+  async joinMatch(invite: string, rejoin: { slot: number; secret: string } | null): Promise<boolean> {
+    if (this.region || this.net || this.readOnly) return false;
+    const inv = parseInvite(invite);
+    if (!inv || inviteProblem(inv)) return false;
+    const { code, key } = inv;
+    const url = relayUrl();
+    const connect: () => Promise<Link> =
+      codeKind(code) === 'online'
+        ? url
+          ? () => webSocketLink(`${url}/region/${code}`)
+          : () => Promise.reject(new Error("Online matches aren't set up yet"))
+        : () => p2pConnect(code, key!, signalling());
+    try {
+      // A host's browser reloading for a rematch takes a few seconds to be there again.
+      await this.attachRegion(code, key, connect, {
+        ...(rejoin ? { rejoin } : {}),
+        ...(codeKind(code) === 'p2p' ? { giveUpAfter: 8 } : {}),
+      });
+      return true;
+    } catch (err) {
+      this.leaveRegion(false);
+      this.toast(err instanceof Error ? err.message : String(err), 'bad', 8000);
+      return false;
+    }
+  }
+
+  /** The invite friends join this match by (code, and the key of one in a browser). */
+  matchInvite(): string | null {
+    return this.regionCode ? formatInvite({ code: this.regionCode, key: this.regionKey }) : null;
+  }
+
+  /**
+   * The room started the next round (a rematch): this page reloads into a new city on the new seed,
+   * keeping its place in the region. A peer-to-peer host keeps the region's record too, and waits a
+   * moment so the others hear of the new round before its region goes with the page.
+   */
+  private toNextRound(next: MatchSession): void {
+    const host = !!this.regionHub;
+    saveMatchSession({ ...next, ...(host ? { hub: this.regionHub!.record() } : {}) });
+    setTimeout(
+      () => location.replace(`${location.pathname}?match=${encodeURIComponent(next.invite)}&again=1`),
+      host ? 1500 : 0,
+    );
+  }
+
+  /**
+   * Keep the match city as an ordinary save (M43): its fast start goes (`endMatch`), it's saved to a
+   * new slot, and the player may carry on with it (the match's result stays on screen until then).
+   */
+  async keepMatchCity(): Promise<string | null> {
+    if (!this.match.active || this.match.kept) return this.match.kept;
+    const r = await this.client.command({ type: 'endMatch' });
+    if (!r.ok) {
+      this.toast(r.reason, 'bad');
+      return null;
+    }
+    const label = `${this.world.stats.cityName} (match)`;
+    this.match.keptAs(label);
+    const slot = `s${Date.now().toString(36)}`;
+    if (!(await this.saveTo(slot, label, true))) return null;
+    this.toast(`Kept as “${label}”: open it from Load city any time.`, 'ok', 6000);
+    return label;
+  }
+
+  /**
+   * After keeping the match city (M43): leave the match's region and carry on with the city as an
+   * ordinary one, at the player's own speed (it's in its new slot, so it autosaves as any city does).
+   */
+  playOnAfterMatch(): void {
+    if (!this.match.kept) return;
+    this.match.leave();
+    this.leaveRegion(false);
+    this.match.resultsOpen = false;
+    this.toast(`Carry on with ${this.world.stats.cityName}: it’s yours now, at your own speed.`, 'ok', 6000);
+    this.notify();
+  }
+
+  /** Leave the match (out of it if it's still on; it goes on without this city) and go to the main menu. */
+  leaveMatch(): void {
+    this.match.leave();
+    this.leaveRegion(false);
+    location.replace(location.pathname);
+  }
+
   /**
    * A new city founded from the friends screen is shared at once, online or from this browser; or it
    * goes into a region (`newregion=…` or `region=CODE`). Both last only while the friends and new-city
@@ -1095,6 +1458,10 @@ export class Game {
 
   attachNet(mp: Multiplayer): void {
     this.net = mp;
+    this.roomModels.attach(mp.session);
+    // Joining a friend's room for the first time (M42): a short card on how rooms work.
+    // (A tip for new players: not for a player who has turned tips off.)
+    if (!this.settings.roomIntro && this.settings.tips && !mp.session.isHost) this.roomIntro = true;
     this.workerSpeed = -1;
     this.client.onPreview = (cmd) => {
       const shape = commandShape(cmd);
@@ -1130,6 +1497,8 @@ export class Game {
       this.audio?.play('alert');
       this.toast(`${p.name}: look here`, 'info', 4000, { x: at[0], z: at[1] });
     };
+    // A player fell out of step (M41): that page and the pacer's each file a desync report.
+    mp.session.onResync = (m) => void this.reportCityDesync(m, mp.session.you);
     // Menus and photo mode don't pause a shared city; it runs at the room's speed.
     this.speedBeforeMenu = null;
     mp.session.onNotice = (n) => {
@@ -1165,6 +1534,7 @@ export class Game {
     const mp = this.net;
     if (!mp) return;
     this.net = null;
+    this.roomModels.detach();
     mp.leave();
     this.client.setSpeed(0);
     this.speed = 0;
@@ -1782,12 +2152,18 @@ export class Game {
           'The election is six months away. Make up to two promises in the city panel (P → Election).',
           'info',
         );
-      else if (e.kind === 'scenarioWon' || e.kind === 'scenarioLost') {
+      else if ((e.kind === 'scenarioWon' || e.kind === 'scenarioLost') && this.watchingRun) {
+        // Watching someone's challenge run (M44): its end is the viewer bar's, never this player's.
+      } else if (e.kind === 'scenarioWon' || e.kind === 'scenarioLost') {
         const sc = this.world.stats.scenario;
         const months = sc ? sc.monthsTaken : 0;
         const won = e.kind === 'scenarioWon';
         this.scenarioEnd = { won, stars: e.id, reason: String(e.info?.reason ?? ''), months };
-        if (won && sc) recordWin(sc.id, e.id, months);
+        // A weekly challenge (M44) keeps its best score on this device; a scenario its stars.
+        const ch = this.challengeDef;
+        if (ch) {
+          if (sc?.challenge) keepBest(ch.week, sc.challenge.score);
+        } else if (won && sc) recordWin(sc.id, e.id, months);
         this.setSpeed(0);
         this.notify();
       } else if (e.kind === 'electionWon' || e.kind === 'electionLost') {
@@ -1811,6 +2187,24 @@ export class Game {
     const keys = new Set<string>();
     let toasted = false;
     for (const a of this.advice) {
+      // Homes a day or less from emptying (M42): said once, plainly, while there's time to act.
+      if (a.emptying && a.emptying.hours <= 24) {
+        const key = `emptying:${a.emptying.why}`;
+        keys.add(key);
+        if (!this.lastAdviceKeys.has(key)) {
+          const what =
+            a.emptying.why === 'utility' ? a.title.toLowerCase() : 'unhappy homes without services';
+          this.notice(
+            key,
+            `Homes will start to empty soon (${what}). The advisors (J) say what to do: ${a.text}`,
+            'bad',
+            a.at,
+            !toasted,
+          );
+          toasted = true;
+        }
+        continue;
+      }
       // Disasters announce themselves; don't repeat them as advice.
       if (a.severity < 3 || a.title.endsWith('under way')) continue;
       const key = `${a.advisor}:${a.title.replace(/[0-9,]+/g, '#')}`;
@@ -1848,10 +2242,32 @@ export class Game {
       this.graphicsCheck = null;
       patch = { ...patch, graphicsChecked: true };
     }
+    const friends = this.settings.showFriendsBuildings;
     this.settings = { ...this.settings, ...patch };
     saveSettings(this.settings);
     this.applySettings();
+    if (friends !== this.settings.showFriendsBuildings) this.renderer.civics.redrawLooks();
     this.notify();
+  }
+
+  /**
+   * A player's own model to draw (M46): here, a friend's only with friends' buildings shown, and (with
+   * `def`) only on a building it fits (its site, budget and kind: a room could name any model).
+   */
+  customModel(hash: string, def?: string): BakedModel | null {
+    const m = this.buildings.get(hash);
+    if (!m || (!m.mine && !this.settings.showFriendsBuildings)) return null;
+    // The host turned custom buildings off in this room: everyone sees the game's own.
+    if (this.net?.session.room?.rules.customBuildings === false) return null;
+    if (def && !fitsTarget(m, targetOfDef(def))) return null;
+    return m.baked;
+  }
+
+  /** The hashes of the models the city's buildings wear (M46). */
+  looksInCity(): string[] {
+    const out = new Set<string>();
+    for (const c of this.world.civics.values()) if (c.look && LOOK_HASH.test(c.look)) out.add(c.look);
+    return [...out];
   }
 
   /**
@@ -1860,15 +2276,29 @@ export class Game {
    */
   startGraphicsCheck(): void {
     const gl = this.renderer.renderer.getContext();
+    const device = currentDevice();
+    const check = new GraphicsCheck(gpuName(gl), navigator.hardwareConcurrency || 0, device);
+    // A phone needs no timing (M49): it starts on the Phone preset, never drawing High first.
+    if (device === 'phone') {
+      this.finishGraphicsCheck(check.frame(0, true)!);
+      return;
+    }
     this.updateSettings(GRAPHICS_PRESETS.high);
-    this.graphicsCheck = new GraphicsCheck(gpuName(gl), navigator.hardwareConcurrency || 0);
+    this.graphicsCheck = check;
     this.notify();
   }
 
   private finishGraphicsCheck(r: CheckResult): void {
     this.graphicsCheck = null;
     this.graphicsResult = r;
-    this.updateSettings({ ...GRAPHICS_PRESETS[r.preset], graphicsChecked: true, autoGraphics: r.preset });
+    // A phone, or a device light enough for the Phone preset, draws 30 frames a second (M49).
+    const cap = r.device === 'phone' || r.preset === 'phone' ? { fpsCap: 30 as const } : {};
+    this.updateSettings({
+      ...GRAPHICS_PRESETS[r.preset],
+      graphicsChecked: true,
+      autoGraphics: r.preset,
+      ...cap,
+    });
     const name = r.preset[0]!.toUpperCase() + r.preset.slice(1);
     this.toast(
       `Graphics set to ${name} for this device (${r.reason}). Change them any time in Settings.`,
@@ -1885,7 +2315,14 @@ export class Game {
     const d = DRAW_DISTANCE_PARAMS[s.drawDistance];
     this.renderer.tiltShiftOn = s.tiltShift;
     this.renderer.applyGraphics({
-      pixelRatio: q.pixelRatio,
+      // Battery saver (M49) draws three pixels in four (a ratio of 0.87 each way).
+      pixelRatio: q.pixelRatio * (s.batterySaver ? 0.87 : 1),
+      maxPixels: q.maxPixels * (s.batterySaver ? 0.75 : 1),
+      trees: q.trees,
+      water: q.water,
+      effects: q.effects,
+      lodGap: q.lodGap,
+      lodDistance: q.lodDistance,
       shadows: s.shadows,
       shadowMap: q.shadowMap,
       fogScale: d.fog,
@@ -1901,6 +2338,54 @@ export class Game {
     this.renderer.controller.edgeScroll = s.edgeScroll;
     this.renderer.controller.pointerDevice = s.pointer;
     applyUiScale(s.uiScale);
+  }
+
+  /** The weekly challenge this city plays (or played), if it's a challenge city (M44). */
+  get challengeDef(): ChallengeDef | null {
+    const ch = this.world.options.challenge;
+    return ch && this.world.stats.scenario?.id === ch.id ? ch : null;
+  }
+
+  /** Ask the board for this week's challenge (M44); offline, the generator's on the page's clock. */
+  async refreshChallenge(): Promise<ChallengeNow> {
+    const now = await this.challenges.current();
+    this.challengeNow = now;
+    this.notify();
+    return now;
+  }
+
+  /**
+   * Post this challenge city's run to the board (M44), under `name`, with the player's groups. Only a
+   * finished challenge's run goes: it is the run as it stood when the challenge ended.
+   */
+  async postChallenge(name: string): Promise<PostReply> {
+    const def = this.challengeDef;
+    const fail = (why: string): PostReply => ({ ok: false, why, status: 0 });
+    if (!def) return fail('This isn’t a challenge city');
+    if (this.challengePost.busy) return fail('Already posting');
+    this.challengePost = { busy: true, reply: this.challengePost.reply };
+    this.notify();
+    let reply: PostReply;
+    try {
+      const run = await this.client.challengeRun();
+      if (!run) reply = fail('This city has no run to post');
+      else if (!run.final) reply = fail('Finish the challenge first');
+      else if (!this.challenges.online) reply = fail('The board isn’t available right now');
+      else reply = await this.challenges.post(def.week, run, name, loadGroups());
+    } catch (e) {
+      reply = fail(e instanceof Error ? e.message : String(e));
+    }
+    this.challengePost = { busy: false, reply };
+    this.notify();
+    return reply;
+  }
+
+  /** Watching a run (M44): straight to its end, or back to watching it play. */
+  rushRun(on: boolean): void {
+    if (!this.watchingRun || this.watchingRun.result) return;
+    this.watchingRun.rush = on;
+    this.client.watchRush(on);
+    this.notify();
   }
 
   inMenu(): boolean {
@@ -1960,6 +2445,17 @@ export class Game {
       if (!quiet) this.toast('You’re visiting a neighbour’s city: nothing here is saved.', 'info');
       return false;
     }
+    // A lesson's town is practice: autosaves leave the player's own cities alone (a save on purpose goes).
+    if (this.lessonTown && slot === 'auto') return false;
+    // Likewise a quick match's city (M43): kept only when the player chooses to.
+    if (this.match.active && !this.match.kept && slot === 'auto') return false;
+    // A weekly challenge city (M44) autosaves to a slot of its own, leaving the player's city alone.
+    const auto = slot === 'auto';
+    const challenge = this.challengeDef;
+    if (challenge && auto) {
+      slot = 'challenge';
+      label = `Challenge, week ${challenge.week + 1}`;
+    }
     if (this.saving) return false;
     this.saving = true;
     this.notify();
@@ -1968,14 +2464,23 @@ export class Game {
       // A city in a shared region rejoins it when this save is opened again (M32); the binding is the
       // city's, so another city saved over this slot later doesn't inherit it (F6).
       if (this.boundRegion) s.meta.region = { ...this.boundRegion };
+      // The key its timelapse is kept under on this device goes with the city (M45).
+      if (this.timelapse.key) s.meta.timelapse = this.timelapse.key;
+      // And the players' own models its buildings wear, so it opens anywhere with them (M46).
+      const models = this.buildings.forSave(this.looksInCity());
+      if (models.length) s.meta.models = models;
       const info = await writeSlot(slot, s, label);
       this.lastSavedAt = performance.now();
-      if (slot !== 'auto') this.slot = slot;
+      if (!auto) {
+        this.slot = slot;
+        this.manualSaves++;
+      }
       // The slot's name, as the load list shows it, not the city's (P22).
       if (!quiet) this.toast(`Saved “${info.label}”`, 'ok');
       return true;
     } catch (e) {
       this.toast(`Save failed: ${e instanceof Error ? e.message : String(e)}`, 'bad');
+      reportProblem('save', e, { message: auto ? 'An autosave failed' : 'A save failed' });
       return false;
     } finally {
       this.saving = false;
@@ -2006,6 +2511,8 @@ export class Game {
 
   /** Autosave, then go back to the main menu (if saving fails, a second try leaves without it). */
   async quitToMenu(): Promise<void> {
+    // A quick match's city (M43) isn't autosaved: its player leaves the match (out; it goes on).
+    if (this.match.active && !this.match.kept) return this.leaveMatch();
     if (
       !this.readOnly &&
       !this.world.stats.bankrupt &&
@@ -2251,30 +2758,73 @@ export class Game {
     return saved;
   }
 
-  /** Start the first-city tutorial from its first step. */
+  /** The first-city tutorial (M42): its cards, pauses, camera moves and first-problem lessons. */
+  readonly tutorial: TutorialRunner = new TutorialRunner(this);
+  /** What the tutorial has seen the player open: the budget, the advisors, a coverage map. */
+  get tutorialSaw(): Set<string> {
+    return this.tutorial.saw;
+  }
+  /** Saves the player made themselves since the page opened (the tutorial's Save step). */
+  manualSaves = 0;
+  /** The card on how a friend's room works is open (M42). */
+  roomIntro = false;
+
+  openRoomIntro(): void {
+    this.roomIntro = true;
+    this.notify();
+  }
+
+  closeRoomIntro(): void {
+    this.roomIntro = false;
+    this.updateSettings({ roomIntro: true });
+  }
+
   startTutorial(): void {
-    this.updateSettings({ tutorialStep: 0 });
+    this.tutorial.start();
   }
-
-  /** Move to the next tutorial step (finishing after the last). */
+  tutorialCard() {
+    return this.tutorial.card();
+  }
   tutorialNext(): void {
-    const next = this.settings.tutorialStep + 1;
-    this.updateSettings({ tutorialStep: next >= TUTORIAL.length ? -1 : next });
+    this.tutorial.next();
+  }
+  leaveTutorial(): void {
+    this.tutorial.leave();
+  }
+  continueTutorial(): void {
+    this.tutorial.resume();
+  }
+  endTutorial(): void {
+    this.tutorial.end();
+  }
+  /** A lesson's prepared town (M42): never autosaved over the player's own cities. */
+  lessonTown = false;
+
+  /** Play one of Learn's lessons on the town it opened (M42). */
+  startLesson(id: string): boolean {
+    this.lessonTown = true;
+    const ok = this.tutorial.startLesson(id);
+    // Making buildings (M47) is the Workshop's lesson: it opens on the Workshop's first step.
+    if (ok && id === 'buildings') {
+      this.workshop.go(0);
+      this.openWorkshop();
+    }
+    return ok;
   }
 
-  endTutorial(): void {
-    this.updateSettings({ tutorialStep: -1 });
+  /** Back to the main menu's Learn screen, the lesson's town left as it is (it isn't saved). */
+  backToLearn(): void {
+    this.tutorial.next();
+    location.href = `${location.pathname}?screen=learn`;
+  }
+  endLesson(): void {
+    this.tutorial.endLesson();
   }
 
   /** Advance past tutorial steps the player has already done; show a tip whose moment has come. */
   private checkGuidance(): void {
     if (this.mode !== 'play') return;
-    let step = this.settings.tutorialStep;
-    while (step >= 0 && step < TUTORIAL.length && TUTORIAL[step]!.done?.(this)) step++;
-    if (step !== this.settings.tutorialStep) {
-      this.updateSettings({ tutorialStep: step >= TUTORIAL.length ? -1 : step });
-      this.audio?.play('good');
-    }
+    this.tutorial.check();
     // Tips wait for the tutorial, and come one at a time.
     if (!this.settings.tips || this.settings.tutorialStep >= 0) return;
     const tip = pickTip(this, this.tip, !!this.screen || !!this.panel, new Set(this.settings.seenTips));
@@ -2309,7 +2859,8 @@ export class Game {
 
   setHint(h: ToolHint | null): void {
     if (!h && !this.hint) return;
-    this.hint = h;
+    // The tools' words are a mouse's: a finger reads them as taps (phase 6 end).
+    this.hint = h && touchScreen() ? { ...h, text: touchWords(h.text) } : h;
     this.notify();
   }
 
@@ -2336,6 +2887,8 @@ export class Game {
   }
 
   setSpeed(speed: Speed): void {
+    // A quick match runs at one speed for everyone, and nothing stops its clock (M43).
+    if (this.match.active && !this.match.kept) return;
     if (this.net) {
       // The room's speed: everyone's city changes together (the room says so back).
       this.net.session.setSpeed(speed);
@@ -2562,6 +3115,88 @@ export class Game {
       });
   }
 
+  /**
+   * Suggest exporting a backup (M49): on an iPhone or iPad, after 20 minutes in a city the first time,
+   * then a week after the last export or answer. Shown as a card (App's BackupCard).
+   */
+  backupNudge = false;
+  private cityOpenedAt = 0;
+  private backupCheckAt = 0;
+
+  /**
+   * While a city is on screen, keep the marker that tells the next visit the page closed without
+   * warning (M49, `alive.ts`); it goes when the page is hidden (main.ts) or the city is left.
+   */
+  private aliveAt = 0;
+  private keepAlive(now: number): void {
+    if (now - this.aliveAt < 15_000) return;
+    this.aliveAt = now;
+    if (this.mode !== 'play' || document.visibilityState !== 'visible') return;
+    markAlive({
+      at: Date.now(),
+      build: BUILD_ID,
+      population: this.world.stats.population,
+      quality: this.settings.quality,
+    });
+  }
+
+  private checkBackup(now: number): void {
+    if (now - this.backupCheckAt < 10_000) return;
+    this.backupCheckAt = now;
+    if (this.backupNudge || this.net || this.readOnly || this.lessonTown || !isIOS()) return;
+    if (!this.cityOpenedAt) this.cityOpenedAt = now;
+    const last = this.settings.backupAt;
+    const due = last ? Date.now() - last > BACKUP.everyMs : now - this.cityOpenedAt > BACKUP.firstMs;
+    if (!due) return;
+    this.backupNudge = true;
+    this.notify();
+  }
+
+  /** A city was exported, or the backup card answered: the next suggestion is a week away. */
+  backedUp(): void {
+    this.backupNudge = false;
+    this.updateSettings({ backupAt: Date.now() });
+  }
+
+  /** When the last frame was drawn (ms), for the frame cap (M49). */
+  private drawnAt = -Infinity;
+  /** When the player last pointed, tapped, scrolled or pressed a key (ms; M49's still scenes). */
+  lastInputAt = 0;
+  /**
+   * Whether a still scene draws fewer frames (M49). Test builds keep every frame unless asked
+   * (localStorage `citybloom.idle=on`), so the e2e suite and the frame benchmarks aren't slowed.
+   */
+  idleFrames = !IS_TEST_BUILD || localFlag('citybloom.idle') === 'on';
+
+  /**
+   * Is nothing on screen moving (M49)? The city is paused (or under a menu), the camera is at
+   * rest, and nobody has touched anything for a moment and a half. A shared city, the main menu's
+   * turning view, photo mode and a battle on show always move.
+   */
+  isStill(now: number): boolean {
+    if (this.mode !== 'play' || this.photo || this.net || this.viewing) return false;
+    if (now - this.lastInputAt < 1500) return false;
+    if (this.speed !== 0 && this.screens.length === 0) return false;
+    if (this.world.stats.war?.battle) return false;
+    return this.renderer.controller.settled();
+  }
+
+  /** The most frames a second to draw now (0: every one the screen offers), M49. */
+  frameLimit(now: number): number {
+    return frameCap({
+      fpsCap: this.settings.fpsCap,
+      batterySaver: this.settings.batterySaver,
+      still: this.idleFrames && this.isStill(now),
+    });
+  }
+
+  /** Is a frame due at `now` (the animation frame's time)? The first-launch check times every frame. */
+  frameDue(now: number): boolean {
+    if (!frameDue(now, this.drawnAt, this.graphicsCheck ? 0 : this.frameLimit(now))) return false;
+    this.drawnAt = now;
+    return true;
+  }
+
   frame(now: number): void {
     const interval = this.lastFrameAt ? now - this.lastFrameAt : 0;
     const dt = this.lastFrameAt ? Math.min(0.1, interval / 1000) : 1 / 60;
@@ -2575,6 +3210,7 @@ export class Game {
     }
     if (this.photo) this.photoFrame(dt);
     this.presenceFrame(now);
+    if (this.net) this.roomModels.frame(now);
     const check = this.graphicsCheck?.frame(now, document.visibilityState === 'visible');
     if (check) this.finishGraphicsCheck(check);
     // The main menu slowly circles the backdrop map.
@@ -2582,6 +3218,8 @@ export class Game {
     else {
       void this.autosave(now);
       this.warModels();
+      this.checkBackup(now);
+      this.keepAlive(now);
     }
     this.renderer.icons.showIslands = this.mode === 'play';
     this.districts.update();
@@ -2595,6 +3233,8 @@ export class Game {
       this.renderer.units.owner = this.net ? (host?.color ?? 0) : (storedProfile()?.color ?? 0);
     }
     if (this.mode !== 'menu') this.atomFrame(now);
+    // A timelapse frame, when one is due, drawn before the player's own (M45).
+    this.timelapse.frame();
     this.renderer.frame(dt);
     if (this.viewerStart > 0 && --this.viewerStart === 0) {
       this.setSpeed(1);
@@ -2617,5 +3257,17 @@ function fairClockOff(): boolean {
     return localStorage.getItem('citybloom.fairClock') === 'off';
   } catch {
     return false;
+  }
+}
+
+/** When an iPhone is asked to export a backup (M49): after 20 minutes the first time, then weekly. */
+export const BACKUP = { firstMs: 20 * 60_000, everyMs: 7 * 24 * 3600_000 };
+
+/** A value kept in localStorage by a spec or a player's browser (null where storage is shut). */
+function localFlag(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
   }
 }

@@ -1,5 +1,6 @@
 import { decodeModels } from '../models/codec';
 import { handmade } from '../render/assets/handmade';
+import { reportProblem } from './reports';
 
 /**
  * Fetch the hand-made models (phase 3): one packed file, converted from assets/models at build
@@ -20,6 +21,8 @@ export async function loadModels(deadlineMs = 6000): Promise<number> {
     handmade.set(decodeModels(bytes));
   } catch (e) {
     console.warn('Hand-made models could not be loaded; buildings keep their generated look.', e);
+    // A file that's missing or won't decode is a fault to hear about (M41); a slow connection isn't.
+    if (!abort.signal.aborted) reportProblem('model', e, { message: 'The building models failed to load' });
   } finally {
     clearTimeout(timer);
   }
@@ -51,6 +54,7 @@ export function loadWarModels(): Promise<{ models: number; units: number }> {
         'War models could not be loaded; military buildings and units keep their generated look.',
         e,
       );
+      reportProblem('model', e, { message: 'The war models failed to load' });
       return { models: 0, units: 0 };
     }
   })();

@@ -29,6 +29,10 @@ export type ToolId =
   | 'ping'
   | 'cleanup';
 
+/** A finger held this long without moving is a long press (M49), within this many px. */
+export const LONG_PRESS_MS = 500;
+export const LONG_PRESS_SLOP = 6;
+
 /** Tools that build roads or buildings: the city limit is drawn stronger while one is out (P21). */
 const LIMIT_TOOLS = new Set<ToolId>(['road', 'zone', 'place']);
 
@@ -76,12 +80,15 @@ export class ToolManager {
     window.addEventListener('pointerup', (e) => this.onUp(e));
     // A touch the browser takes over (a scroll, a system gesture) is no press, and no click.
     window.addEventListener('pointercancel', (e) => {
+      this.endLong(e.pointerId);
       this.pressed.delete(e.pointerId);
       if (this.clickDown?.id === e.pointerId) this.clickDown = null;
       if (this.photoDown?.id === e.pointerId) this.photoDown = null;
       if (!this.pressed.size) this.pinch = false;
     });
-    canvas.addEventListener('pointerleave', () => {
+    canvas.addEventListener('pointerleave', (e) => {
+      // A finger lifting isn't the cursor leaving (M49): what a long press showed stays to be read.
+      if (e.pointerType === 'touch') return;
       this.game.setHint(null);
       this.game.renderer.ghost.showBrush(null, 1);
     });
@@ -97,6 +104,26 @@ export class ToolManager {
    */
   private pressed = new Set<number>();
   private pinch = false;
+  /**
+   * A finger held still (M49): after `LONG_PRESS_MS` it opens the inspector for what is under it
+   * (the select tool) or shows what the tool would do there, as hovering does with a mouse (a tool
+   * that acts on a tap); its release then does nothing.
+   */
+  private long: {
+    timer: ReturnType<typeof setTimeout>;
+    x: number;
+    y: number;
+    id: number;
+    type: string;
+    /**
+     * The press's event time (ms): a release this long after it, with the finger never having moved,
+     * is a long press, timer or not (a busy page runs the timer late, after the release).
+     */
+    downAt: number;
+    moved: boolean;
+  } | null = null;
+  /** Long presses that fired (tests). */
+  longPresses = 0;
 
   get activeId(): ToolId {
     return this.active.id as ToolId;
@@ -137,11 +164,13 @@ export class ToolManager {
   }
 
   private onDown(e: PointerEvent): void {
+    this.game.pointerType = e.pointerType;
     if (e.isPrimary) {
       this.pressed.clear();
       this.pinch = false;
     }
     this.pressed.add(e.pointerId);
+    this.endLong();
     if (!e.isPrimary) {
       // A second finger: the first one's press is a pinch, not a click.
       if (!this.pinch) {
@@ -162,6 +191,21 @@ export class ToolManager {
       this.rightDown = { x: e.clientX, y: e.clientY };
       return;
     }
+    // A finger or a pen held still is a long press (M49), for the select tool and the tools that act
+    // on a tap (a drawing tool's press starts its stroke).
+    if (
+      e.button === 0 &&
+      e.pointerType !== 'mouse' &&
+      (this.active.clickOnly || this.active === this.select)
+    ) {
+      const at = { x: e.clientX, y: e.clientY, id: e.pointerId, type: e.pointerType };
+      this.long = {
+        ...at,
+        downAt: e.timeStamp,
+        moved: false,
+        timer: setTimeout(() => this.longPress(at), LONG_PRESS_MS),
+      };
+    }
     // A tool that acts on a click waits for the button to come up near where it went down: a longer
     // drag is the camera panning (P3).
     if (this.active.clickOnly) {
@@ -179,13 +223,73 @@ export class ToolManager {
   }
 
   private onMove(e: PointerEvent): void {
+    const l = this.long;
+    if (l && e.pointerId === l.id) {
+      const d = Math.hypot(e.clientX - l.x, e.clientY - l.y);
+      if (d > 0) l.moved = true;
+      // A long press holds closer than a tap may wander (a tap's 10 px): a slow page's tap whose
+      // moves take half a second to arrive mustn't turn into one.
+      if (d > LONG_PRESS_SLOP) this.endLong();
+    }
     if (e.isPrimary) this.game.pointerAt(e.clientX, e.clientY);
     if (this.game.photo || !e.isPrimary || this.pinch) return;
     if (this.game.renderer.controller.isDragging && !this.active.usesLeftDrag) return;
     this.active.pointerMove(this.pointer(e));
   }
 
+  /** Forget a pending long press (of this pointer, or any). */
+  private endLong(id?: number): void {
+    if (!this.long || (id !== undefined && this.long.id !== id)) return;
+    clearTimeout(this.long.timer);
+    this.long = null;
+  }
+
+  /** The finger was held still: inspect, or show the tool's preview there; its release does nothing. */
+  private longPress(at: { x: number; y: number; id: number; type: string }): void {
+    this.long = null;
+    if (this.pinch || !this.pressed.has(at.id) || this.game.photo) return;
+    this.longPresses++;
+    this.clickDown = null;
+    this.held = at.id;
+    this.game.renderer.controller.endDrag();
+    navigator.vibrate?.(12);
+    const p: ToolPointer = {
+      clientX: at.x,
+      clientY: at.y,
+      ground: (() => {
+        const g = this.game.renderer.controller.screenToGround(at.x, at.y);
+        return g ? { x: g.x, z: g.z } : null;
+      })(),
+      button: 0,
+      shift: false,
+      ctrl: false,
+      alt: false,
+      id: at.id,
+      type: at.type,
+    };
+    if (this.active === this.select) {
+      this.select.pointerCancel();
+      this.game.select(this.game.renderer.pick(at.x, at.y));
+    } else this.active.pointerMove(p);
+  }
+
+  /** The pointer whose long press fired: its release is not a click. */
+  private held: number | null = null;
+
   private onUp(e: PointerEvent): void {
+    // Held still long enough, but a busy page ran the timer late: it is a long press all the same.
+    const l = this.long;
+    if (l && l.id === e.pointerId && !l.moved && e.timeStamp - l.downAt >= LONG_PRESS_MS) {
+      clearTimeout(l.timer);
+      this.longPress(l);
+    }
+    this.endLong(e.pointerId);
+    if (this.held === e.pointerId) {
+      this.held = null;
+      this.pressed.delete(e.pointerId);
+      if (!this.pressed.size) this.pinch = false;
+      return;
+    }
     this.pressed.delete(e.pointerId);
     // The other fingers of a pinch come up to nothing; the last one up ends it.
     if (!e.isPrimary) {

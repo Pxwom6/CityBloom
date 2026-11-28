@@ -1,6 +1,7 @@
-import { Group, Mesh, type Material, type Vector3 } from 'three';
+import { Group, Mesh, Sphere, Vector3, type Material } from 'three';
 import type { ModelData } from './assets/builder';
-import { Arrays, appendModel, drawCastersOnly } from './modelMerge';
+import { Arrays, appendModel, casterVertices, drawCastersOnly } from './modelMerge';
+import { releaseAfterUpload } from './release';
 
 /**
  * Buildings merged into chunk meshes, at up to three levels of detail (phase 3). A model with
@@ -54,6 +55,8 @@ interface Chunk {
   ids: Set<number>;
   mesh: Mesh | null;
   dirty: boolean;
+  /** When its mesh was last built (ms, the page's clock): a stale one waits its level's `GAP` (M49). */
+  at: number;
   /** Bounding sphere of everything in the chunk. */
   cx: number;
   cy: number;
@@ -66,6 +69,13 @@ interface Chunk {
 const PREFETCH = 140;
 /** Drop a near mesh this far past where it is last drawn. */
 const EVICT = 700;
+/**
+ * The least time (ms) between two builds of a chunk that is on show but stale (M49): a busy
+ * city changes buildings every frame, and a skyline chunk holds a district, so it was built again
+ * every frame for one changed roof far off. Changes close by show soonest; a missing chunk is
+ * always built at once. Scaled by `gapScale` (the graphics quality).
+ */
+const GAP = [250, 250, 600, 1500];
 
 function versionOf(model: ModelData, level: number): ModelData | null {
   if (level === PLAIN) return model.far ? null : model;
@@ -82,6 +92,14 @@ export class LodChunks {
   rebuilt = 0;
   /** Show one level everywhere (tests: compare a level with the next). Null: by distance. */
   force: number | null = null;
+  /** Scale on `GAP` (the Phone preset waits longer; 0 builds a stale chunk as soon as its turn comes). */
+  gapScale = 1;
+  /**
+   * The least time (ms) between any two builds of stale chunks (M49: the Phone preset, 200, so a
+   * busy city's changes cost a slow phone a few builds a second, not one every frame). 0: no limit.
+   */
+  staleEvery = 0;
+  private staleAt = -Infinity;
   private turn = 0;
 
   constructor(
@@ -116,7 +134,17 @@ export class LodChunks {
       if (!c)
         chunks.set(
           k,
-          (c = { ids: new Set(), mesh: null, dirty: true, cx: 0, cy: 0, cz: 0, r: 0, bounds: false }),
+          (c = {
+            ids: new Set(),
+            mesh: null,
+            dirty: true,
+            at: -Infinity,
+            cx: 0,
+            cy: 0,
+            cz: 0,
+            r: 0,
+            bounds: false,
+          }),
         );
       c.ids.add(id);
       c.dirty = true;
@@ -158,18 +186,33 @@ export class LodChunks {
     c.bounds = true;
   }
 
-  private rebuild(k: number, c: Chunk, level: number): void {
+  private rebuild(k: number, c: Chunk, level: number, now: number): void {
     this.drop(c);
     c.dirty = false;
-    const arr = new Arrays(false, true);
+    c.at = now;
+    // Sized beforehand (M49): the arrays are made once at their final size, nothing grows or is copied.
+    const list: [ChunkItem, ModelData][] = [];
+    let casters = 0;
+    let rest = 0;
     for (const id of [...c.ids].sort((a, b) => a - b)) {
       const it = this.item(id);
       if (!it) continue;
       const m = versionOf(it.model, level);
-      if (m) appendModel(arr, m, it.x, it.y, it.z, it.yaw, it.look, undefined, it.seed);
+      if (!m) continue;
+      list.push([it, m]);
+      const cv = casterVertices(m);
+      casters += cv;
+      rest += m.pos.length / 3 - cv;
     }
+    if (!list.length) return;
+    const arr = new Arrays(false, true, { casters, rest });
+    for (const [it, m] of list) appendModel(arr, m, it.x, it.y, it.z, it.yaw, it.look, undefined, it.seed);
     if (!arr.total) return;
-    const mesh = new Mesh(arr.geometry(), this.materials.colour[level]);
+    // The chunk's own sphere (every building's lot and height) bounds its mesh: no pass over it.
+    if (!c.bounds) this.measure(c);
+    const geometry = arr.geometry(new Sphere(new Vector3(c.cx, c.cy, c.cz), c.r + 1));
+    releaseAfterUpload(geometry);
+    const mesh = new Mesh(geometry, this.materials.colour[level]);
     mesh.customDepthMaterial = this.materials.depth[level];
     drawCastersOnly(mesh);
     mesh.castShadow = true;
@@ -184,7 +227,7 @@ export class LodChunks {
    * Once a frame: show each level's chunks that the camera's distance calls for, building the
    * ones that are missing. `all` builds everything wanted now (tests and screenshots).
    */
-  update(eye: Vector3, range: LodRange, all = false): void {
+  update(eye: Vector3, range: LodRange, all = false, now = performance.now()): void {
     let budget = all ? Infinity : this.budget;
     const f = this.force;
     // The levels take turns at the rebuild budget, so a stream of changes can't keep the far
@@ -219,10 +262,17 @@ export class LodChunks {
         if (c.dirty) {
           // Wanted and not there at all: build it now, or there would be a hole. Wanted and
           // stale (a building in it changed), or wanted soon: in turn, a chunk a frame.
-          if (need && !c.mesh && l !== PLAIN) this.rebuild(k, c, l);
-          else if ((need || soon) && budget > 0) {
+          if (need && !c.mesh && l !== PLAIN) this.rebuild(k, c, l, now);
+          else if (
+            (need || soon) &&
+            budget > 0 &&
+            (all ||
+              !c.mesh ||
+              (now - c.at >= GAP[l]! * this.gapScale && now - this.staleAt >= this.staleEvery))
+          ) {
             budget--;
-            this.rebuild(k, c, l);
+            if (c.mesh) this.staleAt = now;
+            this.rebuild(k, c, l, now);
           } else if (!need && !soon) this.drop(c);
         } else if (f === null && l === NEAR && c.mesh && dMin > range.nearEnd + EVICT) {
           this.drop(c);
@@ -245,6 +295,16 @@ export class LodChunks {
         }
       }
     }
+  }
+
+  /** Drop every mesh and mark every chunk stale: all are built again as they're wanted (M49). */
+  reset(): void {
+    for (const level of this.chunks)
+      for (const c of level.values()) {
+        this.drop(c);
+        c.dirty = true;
+        c.at = -Infinity;
+      }
   }
 
   /** Triangles in the meshes on show, by level (debugging and tests). */

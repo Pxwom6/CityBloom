@@ -699,3 +699,241 @@ are done, each with its rows below; the phase's end is the last section.
 | This brief's section in SPEC_REVIEW | the M34–M40 sections above and this one |
 | The README | `README.md`: War (raising forces, raids, diplomacy, war scenarios, war with friends, the atom bomb), the seventeen scenarios, and the war intro saying the bomb is the one thing that is lost for good |
 | Fight a war with a computer neighbour and one between two players through the real UI, race for the atom bomb, and fix whatever feels off | `e2e/phase5-finale.spec.ts` (`@playthrough`, so `npm run playthrough` runs it; about 12 minutes on the owner's Mac, headed Chrome on the GPU at 1280 x 800 and High, tips on): (1) a war with a computer neighbour from the main menu (New city with Rival neighbours, a town grown with the mouse, the HQ and barracks from the Military bar, a raid lived through, an expedition, a war declared from the Diplomacy tab and ended by treaty, every war room tab); (2) a war between two players on the local relay with a third watching (war turned on in the Region panel, declared from the Friends block, a live battle both command from the battle map, peace by treaty); (3) the atom bomb race between them (plants and silo from the toolbar, the Bomb tab, total war, the three-second hold, the countdown, flash and cloud on the target at High, the radiation map, a clean-up crew, the winter on both cities, the pariah). Pictures: `docs/screenshots/phase5-*.png` (fourteen, looked at; two in the README). The unit suite on the final code: 2,039 tests in 185 files pass. Fixed on the way, each with a test (DECISIONS "Phase 5 end"): nineteen findings from the Mac (shelters with none in reach, units knocked out agreeing with their number, the battle bar's targets named by kind, a report's damage line, notices kept off the battle map, the battle map's step and frontier in a player's words, a city told of its own joining twice, notices as sentences, a war's score before any battle, a strike's three notices at once, building names in sentences, urgent tips first, seasons under a nuclear winter, a losing city's peace terms, power in MW, the HQ's refusal naming its cause, the aftermath card's winter, and the no-power advice naming a plant under repair), then in the cloud the war room's eleven tabs in two rows and the war scales' drop-down. Left with a proposal (DECISIONS, PROGRESS "Ideas for what's next"): a young city's first war, a raid that blacks out a town, odds in the Send tab, a computer's refusal with its reason, the bomb in a friends' war score, softer cloud puffs, the fallout reading's words |
+
+# Phase 6 (SPEC-6.md)
+
+Playing with friends: hearing about problems, learning to play, phones, quick matches, a weekly
+challenge, timelapses, players' own buildings, making buildings, and sending ideas and buildings in.
+All nine milestones (M41–M49, M49 Phones done after M42 and before M43) are done, each with its rows
+below; the phase's end is the last section.
+
+## Before you start
+
+| Item | Where |
+|---|---|
+| Start from the latest `main` (phase 5 merged, PR #23) | the session's branch `claude/ecstatic-brown-64m0nb` (standing in for `friends`), made from `main` at 9490cb2 |
+| SPEC-6.md saved word for word | `SPEC-6.md` |
+| Online rooms are live: the Cloudflare request gone from PROGRESS, README and CLAUDE.md updated | `PROGRESS.md` (top), `README.md` "Play with friends", `CLAUDE.md` |
+| "Needed from the owner": how to make `OWNER_KEY` and store it as a GitHub secret | `PROGRESS.md` (top); the deploy workflow passes it to the Worker (M41) |
+| CLAUDE.md: the current brief, the start-of-session steps, the checklist M0–M49 | `CLAUDE.md` |
+| M41–M49 on PROGRESS.md's checklist (M49 after M42); a phase 6 section here and in DECISIONS | `PROGRESS.md`, this section, `docs/DECISIONS.md` "Phase 6" |
+
+## Rules for all of phase 6
+
+| Rule | Where |
+|---|---|
+| What's there doesn't change (single player, co-op, regions, war; saves; protocol bumps keep older clients out) | M41: no sim or save change; the room's `resync` gains optional fields older pages ignore (no bump). M49: no sim or save change (the Phone preset and phone layout are page-only); the room's player list gains an optional `catchUp` older pages ignore, and an older room simply holds no one (no bump) |
+| Phase 4's and 5's rules (deterministic maths and the cross-browser test, the sim pure, the free plan, budgets, plain refusals, tips) | per milestone below |
+| Safe for friends: no accounts, nothing personal, nothing a player writes shown to others before the owner approves, every upload checked and rate-limited, the owner can remove anything | M41: reports name nothing (`cleanReport`, `scrubText`, `cleanEvents`), are read by the owner only, capped and rate-limited; the owner deletes entries and items |
+| Phones from the start: every new screen by touch on a phone, upright and sideways, in phone emulation | M41: the owner area and Report a problem laid out for a phone (`docs/screenshots/m41-owner-phone.png`, `m41-report-phone.png`); M42: the tutorial's cards on a phone; M49: the rest |
+| Owner pages behind `OWNER_KEY`, checked by the Worker on every request, linked from nowhere, usable on a phone | `owner.html` + `relay/reportsHttp.ts` (M41) |
+| Storage in Durable Objects with SQLite within the free plan, logged, old data deleted on a schedule | M41: `ReportsObject`, caps and the 60-day sweep in DECISIONS "M41" |
+| Milestones playable and tested through the real UI, screenshots reviewed, `M<n> complete:` and a pull request, balance and bench | per milestone below |
+
+## M41 Hearing about problems
+
+| Item | Where |
+|---|---|
+| Uncaught errors and rejected promises | `Reporter.listen` (`src/client/reports.ts`), made at the top of `main.ts` (`reportHost.ts`) |
+| Errors in the sim worker and the battle workers | `client.onError` in `main.ts`; `battles.ts` (both workers' `onerror` and error replies, now with a stack) |
+| A failed save or load | `Game.saveTo`, `main.ts` (`readSlot`, `client.load`), the pause menu's import |
+| A model that fails at start-up | `loadModels`, `loadWarModels` (`src/client/models.ts`) |
+| Desyncs in a shared city or a battle | `Game.reportCityDesync` (the room's `resync`, both sides), `liveBattles.ts` (`agree === false`) |
+| Each report: version, browser and OS, graphics, save version, shared, the error and its stack | `ReportEnv` in `relay/reports.ts`, `envOf` in `reportHost.ts` |
+| A desync's tick, both sides' hashes, and the commands since the last agreed snapshot where they fit | `ReportDesync`; the worker's `DesyncLog`; cut past 120 KB (`cut`) |
+| Never sent: names, chat, city names, saves, typed text (but a written report's message) | `scrubText`, `stripAddresses`, `cleanEvents`; tests in `relay/tests/reports.test.ts`, `tests/reports/reporter.test.ts`, the e2e's "names nothing" |
+| Report a problem in the pause menu and the main menu, a short message, a picture of the game, what will be sent shown first | `src/ui/Report.tsx`; `e2e/m41-reports.spec.ts` |
+| "Send crash reports" on by default, can be turned off; one sentence the first time | Settings → Game (`set-crash-reports`); `ReportsNotice` on the main menu; tip `reportProblem` |
+| Folding, a few a minute, the size cap, an offline queue | `reportKey`, `REPORTER` (3 a minute, 20 queued in IndexedDB), `REPORT_CAPS.body` |
+| The owner area: sign in, grouped newest first with counts, versions, browsers, first seen; fixed and reopening; a desync's replay; Copy for Claude Code | `owner.html`, `src/owner/OwnerApp.tsx`, `relay/reportDesk.ts`; scene `scripts/dev/ownershot.mjs` |
+| A script that replays a desync in Node and says where the hashes split | `scripts/desync.ts` (`scripts/lib/desyncReplay.ts`) |
+| *Done:* a deliberate error, a forced desync and a written report reach the owner area through the real UI against the local relay | `e2e/m41-reports.spec.ts` (three tests) |
+| *Done:* duplicates fold | the e2e (two pages, ×2), `relay/tests/reports.test.ts`, `tests/reports/reporter.test.ts` |
+| *Done:* the setting off sends nothing | the e2e, `tests/reports/reporter.test.ts` |
+| *Done:* a modified client can't fill storage past its cap | `relay/tests/reports.test.ts` "can’t be filled past its caps" |
+| *Done:* the replay script finds the split tick for a forced desync | `tests/reports/desyncReplay.test.ts`, the e2e (a real browser city replayed in Node) |
+
+## M42 Learning to play
+
+| Item | Where |
+|---|---|
+| The first city to about 1,000 residents, pausing to teach as each thing matters: roads and zoning; power, water and sewage; demand bars; budget and taxes; services and coverage maps; the advisors; the first problem; saving | `TUTORIAL` (18 steps) and `TUTORIAL_EVENTS` (a fire, a power cut, a jam) in `src/client/tutorial.ts`, run by `src/client/tutorialRunner.ts` |
+| Short sentences | every card two or three sentences of 25 words at most (`tests/tutorial.test.ts`) |
+| A pointer at the button to press | `GuidePointer` in `src/ui/Guide.tsx` (an arrow that follows the layout) and the button's pulse |
+| The camera moves to where it matters | `TutorialStep.camera` (the highway's end, the town, a fire) |
+| Every step can be skipped; the tutorial left and picked up again | Skip this step, Leave for now, Continue the tutorial (pause menu, Settings), Skip tutorial; kept across a reload (`e2e/m42-tutorial.spec.ts`) |
+| Never in the way: steps already done finish themselves | the runner's check (`tests/tutorial.test.ts` "ticks off what the player has already done") |
+| Learn: short lessons on small prepared towns (traffic and transit, money and loans, happiness and services, disasters, districts and policies, playing with friends, war opt-in, making buildings later) | `src/client/lessons.ts`, towns from `scripts/lessons.ts` in `public/lessons/`, the main menu's Learn screen (`LearnScreen` in `src/ui/Shell.tsx`) |
+| New players in a friend's room: a first-time card | `src/ui/RoomIntro.tsx` |
+| Clearer first problems: homes emptying without power or water, towns without services shrinking, warned earlier and plainly through the advisors | `advise()` countdowns (`Advice.emptying`), the notice when a day or less away (`Game.adviceNotices`); `tests/warnings.test.ts` |
+| *Done:* an e2e plays the whole first-city tutorial through the real UI from the main menu to 1,000 residents | `e2e/m42-tutorial.spec.ts` "the first-city tutorial from the main menu to 1,000 residents" |
+| *Done:* an e2e plays every lesson | `e2e/m42-learn.spec.ts` |
+| *Done:* skipping and resuming work | `e2e/m42-tutorial.spec.ts` "leaving the tutorial, skipping a step, and picking it up again after a reload" |
+| *Done:* each step's picture reviewed at 100 % and 140 % and on a phone | `e2e/m42-tutorial.spec.ts` "every tutorial card…" (63 pictures, contact sheets looked at); kept: `docs/screenshots/m42-*.png` |
+
+## M49 Phones
+
+| Item | Where |
+|---|---|
+| Measure first: the first download, memory on the demo town, a 20k city and the bench city, frame and tick times in phone emulation with CPU throttling; log them, fix what they show | `scripts/dev/download.mjs`, `scripts/dev/phoneprobe.mjs` (`--check`); numbers in PROGRESS "Performance (M49)"; fixes in DECISIONS "M49" (construction cells, chunk gaps and sizing, released arrays) |
+| One finger pans, pinch zooms, two fingers turn and tilt | `CameraController` two-finger gesture (`src/render/camera.ts`, `TOUCH`); `e2e/m49-phone.spec.ts` "two fingers" |
+| A tap selects or places; dragging draws roads, zones and areas with a confirm and cancel before money is spent | tools' tap and drag (P-fixes); `RoadTool.askFirst` asks by touch with the price, `TerrainTool.askStroke`; zones and districts are free |
+| A long press opens the inspector and shows what a tooltip would; nothing important hover-only | `ToolManager.longPress` (inspect, or the tool's preview and hint), `Tip` long press, `src/ui/touch.ts` (titles in a bubble) |
+| Undo one tap away; 44 px targets; every tool and panel without a keyboard | the phone bar's Undo; `#ui[data-phone]` sizes in `main.css`; road chain's Done; `phoneProblems` in `e2e/phone.ts`, `scripts/dev/phonepanels.mjs` |
+| Upright and sideways; a bottom bar with groups opening as sheets; panels as sheets dragged down to close; safe areas; readable text | `#ui[data-phone][data-orient]` (`src/ui/layout.ts` `phoneLayout`), `PhoneBar` and `PhoneSheet` in `Toolbar.tsx`, the sheet drag in `touch.ts`, `viewport-fit=cover` and `env(safe-area-inset-*)` |
+| Every panel checked, the war room and the map editor included; a screen that can't work says so | `scripts/dev/phonepanels.mjs` (pictures and a size check of each, both ways up); the editor's `PhoneEditorNotice` |
+| A Phone preset below Low; a 30 fps cap on by default for phones; a battery saver; the first-launch check knows phones and tablets; the same bright look | `QUALITY_PARAMS.phone`, `fpsCap`, `batterySaver` (`src/client/settings.ts`, `frameCap.ts`), `deviceKind` (`graphicsCheck.ts`); `tests/phoneGraphics.test.ts` |
+| Memory: within a measured budget; batches as needed; free what's off screen; warn before a city too big; a killed tab little lost and reported | `src/client/memoryBudget.ts` (big-city card in `Shell.tsx`), war models only with war (phase 5), arrays released after upload (`release.ts`), autosave, the closed-page marker (`src/client/alive.ts`) |
+| Battery: no drawing in the background or with the screen off; fewer frames when nothing moves; the sim off the main thread | the browser's animation frames; `Game.isStill` (10 fps, 5 with the saver); the worker |
+| Data: the first download's size; cached; extras only when needed | the boot screen (`scripts/vite-pwa.ts` fills it in), `src/pwa/sw.js` (`EXTRAS`: scenarios and lessons on first use) |
+| Installing: full screen with icon and splash; keep saves; iPhone backups suggested; export and import by the share sheet and Files | the manifest (either orientation), `keepSaves.ts`, `BackupCard` (`App.tsx`), `exportSave` share sheet and `saveAccept` (`saves.ts`) |
+| Slow phones in shared cities: the room waits for a joiner within a limit; catch-up off the frame budget | `JOIN_HOLD` and `catchUp` (`relay/room.ts`), `waitedFor` and `CATCH_UP_LEAD` (`src/net/session.ts`), bulk catch-up in `src/sim/worker.ts`; `relay/tests/slowJoin.test.ts` |
+| *Done:* a town from the main menu by touch alone, iPhone and Android, upright and sideways | `e2e/m49-phone.spec.ts` (four runs) |
+| *Done:* a throttled phone page joins a busy shared city and catches up | `e2e/m49-join.spec.ts` |
+| *Done:* the Phone preset holds its frame target on the bench city under throttling | `phoneprobe.mjs --check` (PROGRESS "Performance (M49)") |
+| *Done:* memory inside its logged budget on the 20k city | the same, `MEMORY_BUDGET_MB` |
+| *Done:* every panel pictured in phone emulation, upright and sideways, reviewed | `scripts/dev/phonepanels.mjs` contact sheets; kept: `docs/screenshots/m49-*.png` |
+| *Done:* real-phone checks under "To try with a mate" | PROGRESS |
+
+## M43 Quick match
+
+| Item | Where |
+|---|---|
+| "Quick match" from the main menu opens a room, online or peer-to-peer, for 2–4 players; join by code or invite link | `QuickMatchScreen` in `src/ui/Match.tsx` (`main-match`), `?match=<invite>` (`src/client/matchBoot.ts`), the lobby's Copy invite link; 2–4 in `MATCH` and `startRefusal` (`relay/match.ts`) |
+| Each player's own small city in a shared mini-region, side by side, on the same seed (M32's regions) | a region with a `match` (`relay/region.ts`, `relay/match.ts`); `matchOptions` founds every city on the match's seed and map; the cities stand alone (`RegionLink.match`) |
+| Modes chosen by the host: Race (10,000 by default), Rich list (treasury plus assets at the end), Happy town (approval with a minimum population), Mixed | `MATCH_MODES`, `matchScore` (`src/data/match.ts`), shared by the room and the pages; the host picks on the Quick match screen, in the lobby or for a rematch |
+| A timer of 15, 20 or 30 real minutes | `MATCH.minutes`; the room's clock (`startMatch`, `clockPhase`), the page's `MatchClient.timeLeft` |
+| One speed for everyone, no pausing that stops the clock; the fair clock | the worker's `matchClock` (towards the tick the time allows at 3×, never past it); `readReport` counts only reports within it (M37's fair clock generalised); speed buttons disabled, menus don't stop the city |
+| A faster start (money, growth, a short unlock path), every number in DECISIONS, tuned by the balance mayor playing matches | `GameOptions.match` (`Sim.growthPace`, `reached`, `startingFunds`), `MATCH.fastStart`; `scripts/matchBalance.ts`; DECISIONS "M43" |
+| War off in matches | `newMatch` never takes war rules; `rrules`, raids and the project ignored in a match region (`relay/tests/matchRoom.test.ts`) |
+| A live scoreboard along the top; a peek at a rival from the region view; a countdown for the last minute; fixed emotes, chat only if the host allows | `MatchBar`, `MatchPeek` (the city's picture each minute, its figures, Look round), the timer's last-minute warning and `MatchCountdown`, `emote`/`mchat` (`MATCH.emotes`, `settings.chat`) |
+| Results: the winner, each city's numbers and a small chart; Rematch with the same players, a new seed and one click; Back to menu; the match city kept as a normal save | `MatchResults` and `MatchChart`; `mnext` → `rematch` (the room's new seed, every page reloads into it, the round starts by itself); `Game.keepMatchCity` (`endMatch`, a new slot) |
+| A player who leaves is out, and the match goes on; a host who leaves hands over, as rooms do | `mleave` and the decision's "away" (`decideMatch`); `handOver` online; peer-to-peer the match ends with the host's browser (`MatchClient.closed`), as a peer-to-peer room does |
+| *Done:* each mode through the real UI with two and four players, online and peer-to-peer, every page on the same result and hashes | `e2e/m43-match.spec.ts` (four chains of four rounds: online and p2p, two and four players; each round every page's result the same and each page's own hash the one listed) |
+| *Done:* rematch works | the same chains (three rematches each, a mode change each time); `e2e/m43-phone.spec.ts` by touch |
+| *Done:* a match fits the network budget | `scripts/dev/matchbudget.ts` and the e2e's traffic lines (PROGRESS "Network (M43)") |
+| *Done:* a balance run shows each mode can be won in its time on Normal | `scripts/matchBalance.ts` (PROGRESS "Balance (M43)", DECISIONS "M43") |
+| Phones from the start: every new screen by touch, upright and sideways, iPhone and Android | `e2e/m43-phone.spec.ts` (`phoneProblems` on the Quick match screen's lobby, the scoreboard, reactions, peek and results) |
+
+## M44 Weekly challenge
+
+| Item | Where |
+|---|---|
+| A new challenge every Monday, Adelaide time | `relay/week.ts` (`challengeWeek`, `weekStart`, `Intl` for Australia/Adelaide; tests either side of the change in both seasons, `relay/tests/week.test.ts`) |
+| A fixed map and starting city, goals, limits and a time limit as scenarios do, with a score | `ChallengeDef extends ScenarioDef` (`src/data/challenges.ts`), played by M18's scenario system (`startChallenge`, `challengeScore`, the score in the goals panel and the end card); the starting city is the map as founded (DECISIONS "M44") |
+| A deterministic generator seeded by the week: a map, a goal template, a twist (tight budget, no highways, early disaster, rail only, small map) | `challengeFor(week)` (five templates, six twists in rotation, maps from `CHALLENGE_MAPS`); limits `noRoad`, `noBusStops`, `area`, `ScenarioDef.disaster`; `tests/challenge.test.ts` |
+| A hand-made challenge pinned for a week from the owner area | `POST /owner/challenge/pin` (`cleanChallengeDef`, the same on the board, the screen and the city), the owner area's Weekly challenge section (`src/owner/OwnerChallenge.tsx`) |
+| "This week's challenge" on the main menu with the time left and the top score | `ChallengeMenuButton` (`src/ui/Challenge.tsx`, `main-challenge`) |
+| Solo, as many tries as wanted, the best counts | Play / Try again (`handChallenge`, `?challenge=<week>`); one best per player on the board (`ChallengeBoard.post`), the best on this device (`keepBest`) |
+| The city saved like any other, marked as a challenge city | its own autosave slot ("Challenge, week N", `Game.saveTo`), `SaveMeta.challenge` and the load list's mark (`SlotLine`); the challenge in `GameOptions.challenge` and the run in `SaveMeta.run` (save v33) |
+| The week's top scores with display names; a friends board by group code; last week's results until the next change | `ChallengeBoard.board` (`relay/challengeBoard.ts`), the screen's tabs This week / Friends / Last week (`ChallengeScreen`), groups made and joined by code (`newGroupCode`, `groupCode`) |
+| A score sent with its command log and final hash; the Worker's cheap checks (shape, size, week, bounds, one per player every few minutes) | `Game.postChallenge` → `ChallengeClient.post` (the run frozen at the challenge's end, packed); `ChallengeBoard.post` |
+| Anyone can watch a top run as a replay that must reach the same hash; a run that doesn't is dropped | `?challengeRun=<id>` (the worker's `watchRun`, `RunViewerBar`); pages replay the top runs they haven't checked (`checkBoard`, `runCheckWorker.ts`) and send verdicts (`ChallengeBoard.verdict`) |
+| What a modified client could still get away with, and what would close it | DECISIONS "M44", "What a modified client could still do" |
+| The owner can remove an entry | the owner area's Remove / Put back (`POST /owner/challenge/entry/<id>`) |
+| *Done:* 52 weeks the balance mayor can finish, logged with their scores | `npx tsx scripts/challenges.ts 52 46 careful --replay`: 52 of 52 won, each run replayed to the same hash and score (PROGRESS "Balance (M44)"; weeks 0–51 the same) |
+| *Done:* an e2e plays a challenge through the real UI, posts, sees it on the board and the friends board, and watches another run's replay | `e2e/m44-challenge.spec.ts` (two players: roads, zones and buildings with the mouse, a group made and joined, both posted, both boards, Kit's run watched to the same city) |
+| *Done:* a forged score with the wrong hash doesn't stay on the board | the same spec's second test (a real run posted with a wrong hash comes off once a page checks it; the owner sees it dropped); `relay/tests/challengeBoard.test.ts`, `tests/challengeRun.test.ts` |
+| *Done:* the week rolls over correctly at the boundary | the spec's third test (the board's clock and the page's moved across Monday 00:00 in Adelaide: the next week's challenge, last week's results kept); `relay/tests/week.test.ts`, the board's turnover test |
+| Phones from the start | `e2e/m44-phone.spec.ts` (iPhone and Pixel, upright and sideways: the screen, tabs and a group by touch; played to the end card and posted, the board and the run viewer, all with `phoneProblems`) |
+| The cross-browser test | its `challenge` section (`tests/lockstep/challengeSection.ts`): a run recorded, frozen and replayed alike in every engine |
+
+
+## M45 Timelapse
+
+| Item | Where |
+|---|---|
+| While a city plays, small frames from a few fixed views at regular game-time steps: a wide view of the whole map and an orbit of the busiest district | `TimelapseRecorder` (`src/client/timelapse.ts`: every 3 game hours, the views taking turns, by day), `GameRenderer.captureView`, `busiestCell`/`orbitCentre` (`src/client/timelapseThin.ts`) |
+| Kept in IndexedDB within a size limit, older frames thinned so a long city fits | `TimelapseStore` (`citybloom-timelapse`), `thinFrames` (400 a view, 32 MB a city, 160 MB in all); `tests/timelapse.test.ts` (a twenty-year city), the e2e's long city with the limits made small |
+| On by default for new cities, can be turned off, costs nothing noticeable on the frame budget; measured and logged | Settings → Game → Record a timelapse (`settings.timelapse`); `scripts/dev/timelapsebench.mjs` (PROGRESS "Performance (M45)"; the Mac's GPU under "To check on the Mac") |
+| City history (Y): Make timelapse, 15, 30 or 60 s, a view, overlays (name, date, population, milestones and disasters) | `TimelapseSection` and `TimelapseCard` (`src/ui/Timelapse.tsx`); `makeTimelapseVideo` (`src/client/timelapseVideo.ts`: `frameMix`, `overlayText`, `captionAt`) |
+| Optional music from the game's own audio | `renderTimelapseMusic` (`src/audio/timelapseMusic.ts`, the synthesiser the sound effects use); AAC where encoded, else Opus in the MP4 |
+| A video file that plays on phones and in group chats, in Chrome, Edge and Safari; the format chosen and why logged | MP4 with H.264 by WebCodecs + `mp4-muxer`, MediaRecorder as the fallback; DECISIONS "M45" |
+| The first and last frames saved as pictures | First picture / Last picture (JPEG, overlays on) in the card |
+| Cities already running start from when the update arrives, and say so plainly | `SaveMeta.timelapse` (a saved city without one starts recording when opened, `late`); City history's note (`timelapse-late`) |
+| Shared cities record on each player's own machine; nothing extra is sent | a joined city records under `room-<code>` locally (`main.ts`); `e2e/m45-timelapse.spec.ts`'s shared-city test |
+| *Done:* an e2e grows a city for several game years, makes each length through the real UI, checks the file plays and shows growth | `e2e/m45-timelapse.spec.ts` (three game years; 15, 30 and 60 s made through City history; each plays its length at 960×540, shows more town at its end, downloads as an MP4 with H.264) |
+| *Done:* recording stays inside the frame budget on the bench city (measured on the Mac's GPU too) | `timelapsebench.mjs` on the bench city here (a capture draws what one ordinary frame does); the Mac's run under "To check on the Mac" |
+| *Done:* storage stays under its limit on a long city | `tests/timelapse.test.ts` (twenty years, within 400 frames and 16 MB a view, every year still there) and the e2e (the real store's thinning with small limits) |
+| Phones from the start | `e2e/m45-phone.spec.ts` (iPhone and Pixel, upright and sideways, by touch; a video made on two of them) |
+
+## M46 Your own buildings
+
+| Item | Where |
+|---|---|
+| A new look for a building the player placed; the sim still sees the original building | `Civic.look` (a hash, save v34), `placeBuilding`'s `look`, `setLook` (`src/sim/sim.ts`); the inspector's Look (`LookChooser`, `src/ui/MyBuildings.tsx`); `tests/customLook.test.ts` |
+| A custom landmark of 1×1 to 4×4 that works like a plaza or park of that size | `landmark1`…`landmark4` in `src/data/civic.ts` (category `custom`, a park's service and land value); the landmarks row's own buttons (`OwnLandmarks`, `src/ui/Toolbar.tsx`) |
+| Zoned buildings stay as they are | `canHaveLook`/`takesLook` (civic buildings only, never big projects) |
+| A GLB dropped on the game or picked from the player's files | My buildings' Add a model… and drop zone (`buildings-file`) |
+| Checked in the browser by `src/models/check.ts`'s check, spec v6, the target's footprint and budget | `checkCustom` (`src/models/customCheck.ts`: `inspectModel`, `budgetOf`, `CIVIC_BUDGETS` in `src/models/budgets.ts`); `tests/customCheck.test.ts` |
+| Refused with each problem in plain words and a picture of where | the import card's problems and picture (`src/client/modelCheckWorker.ts` draws it: the site in green, the problem parts in red); `e2e/m46-buildings.spec.ts` |
+| A size cap (about 1 MB), no external files or links, parsed in a worker | `CUSTOM.maxBytes`, `externalLinks`, `probeCustom`; one worker a file, stopped after 20 s (`src/client/modelCheck.ts`) |
+| My Buildings: a turntable preview by day and night and in each season; place, rename, delete | `MyBuildingsPanel` (`src/ui/MyBuildings.tsx`), `ModelPreview` (`src/render/modelPreview.ts`: the game's building material, its lit windows, seasonal lawns and snow) |
+| Models travel to the other players in a room within the network budget and the snapshot cap, sent once, cached by hash | protocol 9's `mneed`/`mpart` (`relay/room.ts` passes them on, keeps nothing; caps in `MODEL_LIMITS`), `RoomModels` (`src/client/roomModels.ts`); never in snapshots; `relay/tests/roomModels.test.ts`; PROGRESS "Network (M46)" |
+| Regions: a visited friend's city shows its custom buildings | a region's copy of a city carries its models up to `REGION_MODEL_CHARS` (`Game.cityPort`), adopted on a visit (`main.ts`) |
+| "Show friends' custom buildings" (on by default); off, the original building or a plain generated landmark | `settings.showFriendsBuildings` (also in the panel), `Game.customModel`; nothing fetched while off |
+| The host can turn custom buildings off for the room | the room panel's Custom buildings (`room-custom-toggle`), rule `customBuildings: false` (`roomRefusal`, ordered into every sim) |
+| Nothing goes to the server but the copy passed through the room | the relay keeps no model (in memory only while it passes); DECISIONS "M46" |
+| Saves keep the models their city uses (a save version bump) | `SaveMeta.models` (`Game.saveTo`), adopted on load; save v34 for the looks themselves (`tests/customLook.test.ts`, the v33 migration) |
+| Share as `.glb` or a small `.citybloom-building`; the mate imports it the same way, through the same check | the row's .glb and Share (`buildingFile`, `readBuildingFile` in `src/client/myBuildings.ts`); the e2e imports the shared file on "another device" |
+| *Done:* an e2e imports a good model and three bad ones through the UI, each refused with the right reasons, places the good one as a look and as a landmark, saves and reloads | `e2e/m46-buildings.spec.ts`'s first test (too wide, data in another file, a texture, and a file over 1 MB; the pavilion as a 2×2 landmark and as a pocket park's look; saved, then opened with My buildings emptied as on another device) |
+| *Done:* a second player in a shared city sees it, and doesn't with the setting off | the same spec's second test (Sam's page fetches it through the room and draws it; off, it's the plaza; the host's switch hides it for everyone) |
+| *Done:* the frame budget holds with a city full of custom landmarks | `scripts/dev/custombench.mjs` (150 landmarks wearing a model at 85 % of the landmark's budget, against the same buildings in the game's look; PROGRESS "Performance (M46)"); the Mac's GPU under "To check on the Mac" |
+| Phones from the start | `e2e/m46-phone.spec.ts` (iPhone and Pixel, upright and sideways: My buildings from the Build sheet, a model refused and one added, checked with `phoneProblems`; placed by touch on two of them) |
+| The cross-browser test | its `looks` section (`tests/lockstep/looksSection.ts`); the browser spec now compares the match and challenge sections too |
+
+## M47 Making buildings
+
+| Item | Where |
+|---|---|
+| "Workshop": a section in My buildings and the Learn page, from nothing to a building in the city | `WorkshopTab` (`src/ui/Workshop.tsx`, My buildings' Workshop tab), `Game.workshop` (`src/client/workshopState.ts`); the Learn page's Making buildings lesson (`src/client/lessons.ts`, its town `public/lessons/buildings.citybloom`) |
+| 1. Pick: a building to give a new look or a landmark size; its footprint, height range and budget, with a picture | `PickStep`, `SitePicture`; `workshopTargets`/`workshopTarget` (`src/models/workshop.ts`), heights `src/models/heights.ts` (`scripts/workshopHeights.ts`) |
+| 2. Make with an AI 3D tool: the whole prompt written for them (spec, footprint, roles, file name), ready to copy, in the owner's prompt style; the style sheet to download | `workshopPrompt`, `buildingPrompt`, `SPEC_V6` (`src/models/specText.ts`, held to PROMPTS-5.md and PROMPTS-WAR.md by a test); `public/workshop/style-reference.png` |
+| 2. Make in Blender: scale in metres, the front, the ground at zero, naming parts with the roles, exporting a GLB | `BlenderSteps` (five steps, each with a picture) |
+| 3. Check it: results like a teacher's notes (what's wrong, why, how to fix it) with a picture; the common mistakes | `teacherNote`/`teacherNotes`; `CheckStep`; the picture from M46's worker; a default-names problem in `checkCustom` |
+| 4. See it: on its lot, by day and night, in each season, next to the buildings around it | `SeeStep`, `ModelPreview.showStreet` (`src/render/modelPreview.ts`) |
+| 5. Use it, share it, or send it in (M48) | `UseStep`: Add to My buildings, Place, Share, Send it in (opens M48's screen on the building) |
+| The written guide: `docs/making-buildings.md`, linked from the README and the Workshop, a worked example with screenshots, short and friendly | `docs/making-buildings.md` (the clock pavilion from start to finish; pictures `docs/screenshots/workshop-*.png` from `scripts/dev/workshopshot.mjs --guide`) |
+| The model spec, readable, generated from the same source the check uses | `src/models/playerSpec.ts` (the check's own numbers), written into the guide by `scripts/docs/modelSpec.ts`; `tests/workshop.test.ts` fails if it's out of date |
+| *Done:* an e2e follows the Workshop from picking a landmark to placing a model, copies the prompt and checks its footprint, budget and roles | `e2e/m47-workshop.spec.ts` (from the main menu's Learn page; the copied prompt's site, budget, file and roles; placed in the lesson's town, which ends the lesson) |
+| *Done:* each common mistake gets its own plain-words fix, tested with a bad model for each | `mistakeModels()` (`scripts/lib/makeGlb.ts`); `tests/workshop.test.ts` and the e2e check each through the real check |
+| *Done:* the guide's screenshots are reviewed | reviewed in the session (DECISIONS "M47") |
+| *Done:* a mate who has never made a model tries it | PROGRESS, "To try with a mate" |
+| Phones from the start | `e2e/m47-phone.spec.ts` (iPhone and Pixel, upright and sideways, every step with `phoneProblems`; a model checked and added on two) |
+
+## M48 Send it in
+
+| Item | Where |
+|---|---|
+| "Send an idea" on the main menu and in the pause menu; "Send it in" from My Buildings | `main-submit`, `pause-submit` (`src/ui/Shell.tsx`); each row's `buildings-send-<hash>` (`src/ui/MyBuildings.tsx`) and the Workshop's `workshop-send`; `Game.openSubmit` |
+| An idea: a short title, a capped description, a kind (building, feature, fix, scenario or challenge, something else), an optional screenshot from the game | `SubmitScreen` (`src/ui/Submit.tsx`); `IDEA_KINDS`, `SUBMIT_LIMITS` (80 / 1,500 characters, a 400 kB JPEG from `Game.reportShot()`) in `relay/submissions.ts` |
+| A building: a custom model that passes the check, its name, what it's for, a line about it | a model from My buildings (checked when it went in, `checkCustom`), its name and target, a line of 200 characters; the relay's `glbProblem` and hash check; the full check again in the owner's browser |
+| An optional "credit me as" name; nothing else about the player asked for or stored | `credit` (40 characters, cleaned, through the owner's word filter); the token kept only as its SHA-256; the address never stored (a day's counts under a hash with a daily salt, both deleted with the day; DECISIONS "M48") |
+| Before sending: exactly what will be sent, and that only the owner sees it unless picked | the review card (`submit-preview`, `submit-who`: "Only the game's maker will see it…") with the picture as it goes |
+| After sending: their submissions with status (sent, seen, "coming in an update", not this time), kept with a private browser token, not an account | What I sent (`submit-mine-row`, `STATUS_WORDS`); `SubmitClient.token()` (`citybloom.submitToken`, `src/client/submissions.ts`); `POST /submit/mine` (the token in the body) |
+| Owner area: all submissions newest first, filters by kind and status | `OwnerSubmissions` (`src/owner/OwnerSubmissions.tsx`, `owner-sub-kind`, `owner-sub-status`); `GET /owner/submissions` |
+| Ideas show their text and screenshot; buildings a 3D preview with the turntable, day and night, and the check's results | `Detail`: `owner-sub-text`, `owner-sub-shot`; `ModelPreview` with Day / Night; `checkModelFile` and the teacher's notes (`owner-sub-check`) |
+| Mark seen, accepted or declined, with an optional reply the player sees | `owner-sub-seen/accept/decline`, `owner-sub-reply`; `SubmissionsDesk.decide` |
+| Delete anything; add words to the filter | `owner-sub-delete`; `owner-sub-words` (`setWords`) |
+| An accepted building as a GLB with its credit | Download GLB, named `<name>-by-<credit>.glb` (`glbName`) |
+| "Copy for Claude Code": what it is, where in `assets/models/`, its credit for CREDITS.md, an idea in full | `submissionForClaude` (also: in through the normal pipeline and a pull request; players' words fenced and labelled as data, `src/owner/untrusted.ts`) |
+| Nothing goes into the game automatically | nothing reads the desk but the owner area and the accepted list (DECISIONS "M48") |
+| An "Accepted ideas" list in the game, only ever what was accepted, with credits | Accepted ideas (`accepted-list`, `accepted-row`); `GET /submit/accepted` (`SubmissionsDesk.accepted`: accepted rows only) |
+| A few a day per browser, capped sizes, the free plan's storage; declined deleted after 30 days; accepted kept until deleted | 5 a day per token and per address, 300 in all, caps on every field and the body, 2,000 kept and 400 MB of files, 3,000 rows a day; the sweep (an alarm and each write); `relay/tests/submissions.test.ts` |
+| *Done:* an e2e sends an idea with a screenshot and a building through the real UI against the local relay, sees them in the owner area, accepts one with a reply and declines the other, and the player sees both statuses | `e2e/m48-submit.spec.ts` (the idea from the pause menu with its picture, the building from My buildings; the owner area accepts the idea with a reply, checks and downloads the building, declines it; What I sent shows both with their replies) |
+| *Done:* the accepted list shows only the accepted one | the same spec (the screen's Accepted ideas and `GET /submit/accepted`) |
+| *Done:* nothing submitted is reachable without `OWNER_KEY` unless accepted | the same spec (no key and a wrong key refused, 401); `relay/tests/submissions.test.ts` (every owner route, the files, the list) |
+| *Done:* a modified client can't push past the caps or read another player's submissions | the same spec (six sends straight to the relay: five taken, the sixth refused; a 1.6 MB body refused; another token reads nothing); unit tests for the address cap, sizes and the inbox |
+| Phones from the start; the owner area on the owner's phone | `e2e/m48-phone.spec.ts` (iPhone and Pixel, upright and sideways: the form, the preview, What I sent, Accepted ideas, a building on two; the owner area on an iPhone both ways, every press 44 px) |
+
+
+## When every milestone is done (phase 6)
+
+| Item | Where |
+|---|---|
+| Update the summary at the top of PROGRESS.md | PROGRESS.md: the status above the checklist (phase 6 complete, in PR #24), the checklist's line, and the phase 6 paragraph in the Summary |
+| This brief's section in SPEC_REVIEW | the M41–M49 sections above and this one |
+| The README: a new "Play with friends" overview covering quick match, the weekly challenge, timelapses and custom buildings, with pictures | `README.md` "Play with friends": Quick match, This week's challenge, Timelapses, Your own buildings and sending them in, Playing on a phone, with four pictures taken in headed Chrome on the Mac's GPU at High (`docs/screenshots/friends-*.jpg`, from `matchshot.mjs`, `challengeshot.mjs`, `timelapseshot.mjs` and `buildingsshot.mjs` with `GPU=1`, looked at); the tutorial and Learn in "Play"; Report a problem and crash reports in "When something goes wrong" |
+| Play the phase through the real UI and fix whatever feels off: a new player's first city with the tutorial on desktop and in phone emulation; a four-player quick match with two on phones; a week's challenge; a timelapse of a grown city; a custom building made in the Workshop, shared with a friend and sent in; the owner area handling all of it | `e2e/phase6-finale.spec.ts` (`@playthrough`, so `npm run playthrough` runs it; `PHASE6_GPU=1` plays it in headed Chrome on the GPU, as judged on the owner's Mac): (1) a brand-new player's first city on a laptop from the first launch, every tutorial card followed by its arrow to 1,000 residents, then a 30-second timelapse of it saved and a problem reported; (2, 3) the same by touch alone on an iPhone upright and a Pixel sideways; (4) a four-player quick match online, two laptops and two phones, a rematch, a city kept; (5) this week's generator challenge played four years, posted in a friends' group and watched to its end on a phone ("same city"); (6) a building made in the Workshop, shared to a friend's phone and placed there, sent in beside an idea; (7) the owner area on an iPhone: a report fixed, a board entry removed and put back, a word filtered, the building accepted and the idea declined with replies, which the player then reads. Pictures `docs/screenshots/phase6-*.png` (looked at). Fixed on the way, each in DECISIONS "Phase 6 end": a generator week's runs replaying to another city (the board would have dropped every honest score), zone strokes off the kerb that never grew, the tutorial on phones (touch words, a folding card, notices clear of it, arrows into More and onto a panel's tab), first problems from "Let time run", quick panel visits counted, zone paint over a data map, the lesson card beside its panel, four cities on a phone's scoreboard, the owner area's clock, "Load city" |
+| Keep the playthroughs as a spec tagged `@playthrough` | `e2e/phase6-finale.spec.ts` |
+| The real-world checks under "To check on the Mac" and "To try with a mate": a quick match between real friends on real machines, phones included; a first-time player with no help; a mate making their first building with the Workshop | PROGRESS "To try with a mate" (M42–M49 entries) and "To check on the Mac" (the phase 6 items, with what the Mac ran at the phase's end and what stays for real phones and friends) |

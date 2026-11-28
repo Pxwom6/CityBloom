@@ -301,7 +301,10 @@ export class PostPipeline {
       this.target &&
       this.target.width === w &&
       this.target.height === h &&
-      this.target.samples === this.wanted(w * h)
+      this.target.samples === this.wanted(w * h) &&
+      // The occlusion's and the glow's targets exist only while they're on (M49: a phone's memory).
+      this.settings.aoSamples > 0 === !!this.aoA &&
+      this.settings.glow === !!this.glowA
     )
       return;
     this.dispose();
@@ -325,12 +328,16 @@ export class PostPipeline {
     const hw = Math.max(1, Math.ceil(w / 2));
     const hh = Math.max(1, Math.ceil(h / 2));
     const lin = { depthBuffer: false, minFilter: LinearFilter, magFilter: LinearFilter };
-    this.aoA = new WebGLRenderTarget(hw, hh, lin);
-    this.aoB = new WebGLRenderTarget(hw, hh, lin);
+    if (this.settings.aoSamples > 0) {
+      this.aoA = new WebGLRenderTarget(hw, hh, lin);
+      this.aoB = new WebGLRenderTarget(hw, hh, lin);
+    }
     const qw = Math.max(1, Math.ceil(w / 4));
     const qh = Math.max(1, Math.ceil(h / 4));
-    this.glowA = new WebGLRenderTarget(qw, qh, { ...lin, type: HalfFloatType });
-    this.glowB = new WebGLRenderTarget(qw, qh, { ...lin, type: HalfFloatType });
+    if (this.settings.glow) {
+      this.glowA = new WebGLRenderTarget(qw, qh, { ...lin, type: HalfFloatType });
+      this.glowB = new WebGLRenderTarget(qw, qh, { ...lin, type: HalfFloatType });
+    }
   }
 
   private pass(renderer: WebGLRenderer, mat: ShaderMaterial, to: WebGLRenderTarget | null): void {

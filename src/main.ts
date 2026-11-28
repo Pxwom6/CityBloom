@@ -1,3 +1,5 @@
+import { clearAlive, takeAlive } from './client/alive';
+import { installTouch } from './ui/touch';
 import { render, h } from 'preact';
 import './ui/styles/main.css';
 import { BUILD_ID, GAME_TITLE, IS_TEST_BUILD } from './config';
@@ -9,6 +11,7 @@ import { Game } from './game';
 import { App } from './ui/App';
 import { MAP_PRESETS, MAP_SIZE, type MapPreset } from './data/world';
 import { SCENARIO } from './data/scenarios';
+import { LESSON } from './client/lessons';
 import { decodeSave, readSlot } from './client/saves';
 import { loadBattle, loadTown } from './client/battles';
 import { BATTLE_V4 } from './sim/battle/types';
@@ -27,12 +30,18 @@ import { Multiplayer } from './net/multiplayer';
 import type { SimDriver } from './net/driver';
 import { loadProfile, regionRejoin, storedProfile } from './client/profile';
 import { askName } from './ui/JoinPrompt';
+import { planMatch, type MatchPlan } from './client/matchBoot';
 import { relayUrl, signalling } from './net/multiplayer';
 import { webSocketLink } from './net/link';
 import { p2pConnect } from './net/p2p';
 import { fetchCitySave } from './net/regionLink';
 import { codeKind, formatInvite, inviteProblem, parseInvite, type Invite } from '../relay/protocol';
 import { WAR_SCALES, foundingRules, type WarScale } from './data/war';
+import { pageReporter } from './client/reportHost';
+import { relayHttpBase, reportProblem, workerError, REPORTS_NOTICE } from './client/reports';
+import { ChallengeClient, markChecked, takeChallenge, wasChecked, type FetchedRun } from './client/challenge';
+import { challengeOptions } from './data/challenges';
+import { CHALLENGE_TOWN } from './sim/runReplay';
 
 /** The map behind the main menu, if the demo town can't be opened. */
 const BACKDROP: Partial<GameOptions> = { seed: 'citybloom', preset: 'river' };
@@ -42,6 +51,12 @@ const BACKDROP: Partial<GameOptions> = { seed: 'citybloom', preset: 'river' };
  * page has loaded, which can be before the game has finished booting.
  */
 const install = new AppInstall(window);
+
+/**
+ * Hearing about problems (M41): listening from the start too, so an error while booting is heard. It
+ * sends nothing when the player has turned "Send crash reports" off.
+ */
+const reports = pageReporter();
 
 /**
  * A save shipped with the game as a static file: the small town growing behind the main menu (made
@@ -175,6 +190,11 @@ async function joinRoom(invite: Invite, client: SimClient): Promise<{ mp: Multip
 }
 
 async function boot(): Promise<void> {
+  // The owner area (phase 6) is a page of its own; `#/owner` on the game's address leads there.
+  if (location.hash === '#/owner') {
+    location.replace(`${import.meta.env.BASE_URL}owner.html`);
+    return;
+  }
   document.title = GAME_TITLE;
   const params = new URLSearchParams(location.search);
   // The hand-made building models download while the city is made, opened or fetched from a room.
@@ -204,10 +224,52 @@ async function boot(): Promise<void> {
       },
     );
   }
+  // A quick match (M43): the settings (from the Quick match screen, or read from the match's region)
+  // and the city to found on its seed.
+  let matchPlan: MatchPlan | null = null;
+  let matchError: string | null = null;
+  if (params.has('match')) {
+    const boot = document.getElementById('boot');
+    if (!storedProfile() && boot && params.get('match') !== 'new')
+      await askName(boot, 'Join a quick match', loadProfile());
+    const url = relayUrl();
+    matchPlan = await planMatch(
+      params,
+      IS_TEST_BUILD,
+      loadProfile().name,
+      ({ code, key }) =>
+        codeKind(code) === 'online'
+          ? () =>
+              url
+                ? webSocketLink(`${url}/region/${code}`)
+                : Promise.reject(new Error('Online matches aren’t set up'))
+          : () => p2pConnect(code, key!, signalling()),
+      bootStatus,
+    ).catch((err: unknown) => {
+      matchError = `That match couldn’t be opened: ${err instanceof Error ? err.message : String(err)}`;
+      return null;
+    });
+  }
   // Watching a battle fought in a neighbour's town (M35): its record and the town it was fought in.
   const battleId = params.get('battle');
   const battleRecord = battleId ? await loadBattle(battleId).catch(() => null) : null;
   const battleTown = battleRecord?.townKey ? await loadTown(battleRecord.townKey).catch(() => null) : null;
+  // The weekly challenge (M44): a fresh city on the week's challenge (handed over by the challenge
+  // screen, or the generator's), or a run from the board to watch.
+  const challengeParam = params.get('challenge');
+  const challengeNo = challengeParam === null ? NaN : Number(challengeParam);
+  const challengePlay = Number.isInteger(challengeNo) && challengeNo >= 0 ? takeChallenge(challengeNo) : null;
+  let watched: FetchedRun | null = null;
+  let watchError: string | null = null;
+  if (params.has('challengeRun')) {
+    bootStatus('Fetching the run…');
+    watched = await new ChallengeClient(relayHttpBase(relayUrl()))
+      .fetchRun(Number(params.get('challengeRun')))
+      .catch((err: unknown) => {
+        watchError = `That run can’t be watched: ${err instanceof Error ? err.message : String(err)}`;
+        return null;
+      });
+  }
   const menu = ![
     'paused',
     'seed',
@@ -219,12 +281,23 @@ async function boot(): Promise<void> {
     'join',
     'visit',
     'battle',
+    'lesson',
+    'match',
+    'challenge',
+    'challengeRun',
   ].some((k) => params.has(k));
   const client = new SimClient();
   client.testMode = IS_TEST_BUILD;
+  // Errors in the sim worker (M41): its message and stack, as one text.
+  client.onError = (m) => {
+    console.error(`[sim] ${m}`);
+    reportProblem('worker', workerError(m));
+  };
   // An invite link (M30): into the room, whose city comes as a snapshot.
   let joined: { mp: Multiplayer; snap: Snapshot } | null = null;
-  let joinError: string | null = params.has('join') ? inviteProblem(joinInvite) : visitError;
+  let joinError: string | null = params.has('join')
+    ? inviteProblem(joinInvite)
+    : (visitError ?? matchError ?? watchError);
   if (joinInvite && !joinError) {
     // A friend arriving for the first time picks the name the others will see (F12).
     const boot = document.getElementById('boot');
@@ -257,18 +330,30 @@ async function boot(): Promise<void> {
   const loadSlot = params.get('load');
   // A scenario (M18) opens its starting city, shipped as a save beside the game.
   const scenario = SCENARIO.get(params.get('scenario') ?? '');
+  // One of Learn's lessons (M42): its prepared town, shipped beside the game too.
+  const lesson = LESSON.get(params.get('lesson') ?? '');
   const found = visited
     ? visited
     : battleTown
       ? battleTown
       : loadSlot
-        ? await readSlot(loadSlot).catch(() => null)
+        ? await readSlot(loadSlot).catch((err: unknown) => {
+            reportProblem('load', err, { message: 'A saved city couldn’t be read' });
+            return null;
+          })
         : scenario
           ? await shippedSave(`scenarios/${scenario.save}`)
-          : menu
-            ? await shippedSave('demo.citybloom')
-            : null;
-  const opened = found && (await client.load(found, IS_TEST_BUILD).catch(() => null));
+          : lesson?.save
+            ? await shippedSave(`lessons/${lesson.save}`)
+            : menu
+              ? await shippedSave('demo.citybloom')
+              : null;
+  const opened =
+    found &&
+    (await client.load(found, IS_TEST_BUILD).catch((err: unknown) => {
+      reportProblem('load', err, { message: 'A saved city wouldn’t open' });
+      return null;
+    }));
   // A battle this browser doesn't keep (or whose town won't open): back to the city it came from,
   // never a fresh city in its place (which would autosave over the player's).
   if (battleId && !(battleRecord && battleTown && opened)) {
@@ -282,29 +367,38 @@ async function boot(): Promise<void> {
   const save = !menu && opened ? found : null;
   const snap = joined
     ? joined.snap
-    : editing
-      ? await client.init(
-          {
-            editor: true,
-            seed: editing.map.seed,
-            preset: editing.map.preset,
-            cityName: editing.map.name,
-            sandbox: true,
-            disasters: false,
-            elections: false,
-            region: false,
-          },
-          IS_TEST_BUILD,
-          editing.map,
-        )
-      : opened ||
-        (await client.init(menu || joinError ? BACKDROP : optionsFrom(params), IS_TEST_BUILD, cityMap));
+    : matchPlan
+      ? await client.init(matchPlan.options, IS_TEST_BUILD)
+      : challengePlay || watched
+        ? await client.init(
+            challengeOptions(challengePlay ?? watched!.run.def, CHALLENGE_TOWN),
+            IS_TEST_BUILD,
+          )
+        : editing
+          ? await client.init(
+              {
+                editor: true,
+                seed: editing.map.seed,
+                preset: editing.map.preset,
+                cityName: editing.map.name,
+                sandbox: true,
+                disasters: false,
+                elections: false,
+                region: false,
+              },
+              IS_TEST_BUILD,
+              editing.map,
+            )
+          : opened ||
+            (await client.init(menu || joinError ? BACKDROP : optionsFrom(params), IS_TEST_BUILD, cityMap));
   if (joined || visited) bootStatus('Building the scene…');
   const world = new ClientWorld(snap);
   await models;
   const canvas = document.getElementById('scene') as HTMLCanvasElement;
   const renderer = new GameRenderer(canvas, world);
   const game = new Game(client, world, renderer, install);
+  reports.attach(game);
+  game.reporter = reports.reporter;
   game.audio = new AudioEngine(game.settings);
   if (editing) {
     game.mode = 'editor';
@@ -338,6 +432,8 @@ async function boot(): Promise<void> {
     history.replaceState(null, '', location.pathname);
   } else if (visited) {
     game.readOnly = true;
+    // A friend's city brings the models its buildings wear (M46), checked as any are.
+    if (visited.meta.models) void game.buildings.ready.then(() => game.buildings.adopt(visited.meta.models));
     game.setSpeed(0);
     game.setCamera('overview', true);
     game.toast(
@@ -348,12 +444,65 @@ async function boot(): Promise<void> {
   } else if (joined) {
     game.attachNet(joined.mp);
     game.setCamera('overview', true);
+    // A friend's city records on this machine under the room's code; nothing is sent (M45).
+    if (joinInvite) void game.timelapse.begin(`room-${joinInvite.code}`, false);
     game.toast(`You joined ${world.stats.cityName}.`, 'ok', 5000);
+    history.replaceState(null, '', location.pathname);
+  } else if (matchPlan) {
+    // A quick match (M43): the city waits on the match's clock; a reload goes back to the main menu.
+    const plan = matchPlan;
+    game.match.begin({ invite: plan.invite ?? '', kind: plan.kind, round: plan.round, city: plan.city });
+    game.setCamera('overview', true);
+    history.replaceState(null, '', location.pathname);
+    void (async () => {
+      const ok = plan.host
+        ? await game.hostMatch(
+            plan.kind,
+            plan.settings,
+            plan.rejoin && plan.invite ? { invite: plan.invite, ...plan.rejoin, hub: plan.hub } : undefined,
+          )
+        : await game.joinMatch(plan.invite!, plan.rejoin ?? null);
+      if (ok && !plan.invite) game.match.invite = game.matchInvite();
+      if (!ok) setTimeout(() => location.replace(location.pathname), 4000);
+    })();
+  } else if (watched) {
+    // Watching a weekly challenge run (M44): the city founded from the challenge takes the run's
+    // commands at their ticks; at its end the worker says whether it came to the same city.
+    const w = watched;
+    game.readOnly = true;
+    game.watchingRun = {
+      id: w.id,
+      name: w.name,
+      week: w.run.week,
+      score: w.run.score,
+      end: w.run.end,
+      rush: false,
+      result: null,
+    };
+    client.onRunDone = (r) => {
+      if (!game.watchingRun) return;
+      game.watchingRun.result = { ok: r.ok, score: r.score };
+      game.watchingRun.rush = false;
+      game.setSpeed(0);
+      // Watching is checking: the board hears (once from this browser) whether it replayed.
+      if (!wasChecked(w.id)) {
+        markChecked(w.id);
+        void game.challenges.verdict(w.id, r.ok);
+      }
+      game.notify();
+    };
+    client.watchRun({ entries: w.run.entries, end: w.run.end, hash: w.run.hash, score: w.run.score });
+    // Framed on where the town grows: from the highway's end, inland.
+    const hw = world.netState.nodes.get(world.highway.connect);
+    game.setCamera(hw ? { x: hw.x + 300, z: hw.z, distance: 1100, yaw: 0.28, tilt: 0 } : 'overview', true);
+    game.setSpeed(1);
     history.replaceState(null, '', location.pathname);
   } else if (menu || joinError) {
     game.mode = 'menu';
     game.openScreen('main');
     if (params.get('screen') === 'scenarios') game.openScreen('scenarios');
+    if (params.get('screen') === 'learn') game.openScreen('learn');
+    if (params.get('screen') === 'challenge') game.openScreen('challenge');
     // A region's invite link: the friends screen, to choose the city to bring (M32).
     const invited = params.get('region') ? parseInvite(params.get('region')!) : null;
     if (invited && !inviteProblem(invited)) {
@@ -383,14 +532,30 @@ async function boot(): Promise<void> {
     } else if (scenario)
       game.toast('That scenario could not be opened; here is a fresh map instead.', 'bad', 6000);
     if (params.get('tutorial') === '1') game.startTutorial();
+    // A lesson's town opens paused where the lesson starts; it isn't one of the player's saves.
+    if (lesson && save) {
+      game.slot = null;
+      game.startLesson(lesson.id);
+    } else if (lesson)
+      game.toast('That lesson’s town couldn’t be opened; here is a fresh map instead.', 'bad', 6000);
+    // The city's timelapse (M45): a new city's from its founding; a saved one under the key its save
+    // keeps, or (saved before timelapses, or on another device) from now. Never a lesson's town.
+    if (!lesson) void game.timelapse.begin(save?.meta.timelapse ?? null, !save);
+    // The players' own models the city's buildings wear (M46), checked and kept as a friend's would be.
+    if (save?.meta.models) void game.buildings.ready.then(() => game.buildings.adopt(save.meta.models));
     // A new city takes the player's seasons and weather settings (M22); saves and scenarios keep theirs.
-    if (!save && !scenario) {
+    if (!save && !scenario && !challengePlay) {
       const { seasons, weather } = game.settings;
       if (!seasons || weather !== 2) void game.dispatch({ type: 'setWeather', seasons, intensity: weather });
     }
     // A reload goes back to the main menu (Continue picks up the latest save) rather than
     // re-creating this city from scratch.
-    if (params.has('new') || params.has('load') || scenario)
+    // A weekly challenge's city (M44) opens on its brief, paused until the player begins.
+    if (challengePlay) {
+      game.scenarioBrief = true;
+      game.setSpeed(0);
+    }
+    if (params.has('new') || params.has('load') || scenario || lesson || challengePlay)
       history.replaceState(null, '', location.pathname);
     // Back from a battle this browser doesn't keep (M35).
     if (params.get('noreplay') === '1')
@@ -443,7 +608,20 @@ async function boot(): Promise<void> {
   // in a room or a visit an invite link opened straight into (F12).
   if (!game.settings.graphicsChecked && (game.mode === 'menu' || joined || visited))
     game.startGraphicsCheck();
+  // A page that opened straight into a city (an invite link, a saved city) says once what crash reports
+  // send, as the main menu does; until it has, nothing goes by itself. (Test builds only when asked,
+  // so the e2e suite's cities aren't covered by it.)
+  if (
+    game.mode !== 'menu' &&
+    !game.settings.reportsNotice &&
+    (!IS_TEST_BUILD || params.get('reportsNotice') === '1')
+  ) {
+    game.toast(REPORTS_NOTICE, 'info', 12_000);
+    game.updateSettings({ reportsNotice: true });
+  }
   render(h(App, { game }), document.getElementById('ui')!);
+  // Long presses show titles, and phone sheets close by dragging (M49).
+  installTouch(document.getElementById('ui')!);
   if (IS_TEST_BUILD) installTestApi(game);
   // Built pages keep a copy of the game for offline play and offer new versions (not the dev server).
   if (import.meta.env.PROD) game.updates.start(`${import.meta.env.BASE_URL}sw.js`, import.meta.env.BASE_URL);
@@ -462,8 +640,27 @@ async function boot(): Promise<void> {
     void game.keeper.ask(true);
   };
 
+  // A page closed while a city was showing (M49: a phone closing it for memory, most likely) is
+  // reported once, now; then the marker is kept again while a city is on screen, and taken away when
+  // the page is hidden or closed properly.
+  // (A test build reports it only when a spec asks, so specs that close pages don't report each other.)
+  const died = takeAlive();
+  if (died && (!IS_TEST_BUILD || localStorage.getItem('citybloom.aliveReports') === 'on'))
+    reportProblem('error', new Error('The page closed while a city was showing'), {
+      message: `The page closed while a city of ${died.population} residents was showing (graphics: ${died.quality}); the browser may have closed it for memory`,
+    });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') clearAlive();
+  });
+  window.addEventListener('pagehide', clearAlive);
+  // Anything the player does counts as moving the scene (M49: a still one draws fewer frames).
+  const touched = () => (game.lastInputAt = performance.now());
+  for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown'] as const)
+    window.addEventListener(type, touched, { passive: true, capture: true });
+  // A hidden page draws nothing: the browser stops animation frames (and the audio engine suspends).
   const loop = (now: number) => {
-    game.frame(now);
+    // The frame cap, the battery saver and still scenes skip frames (M49).
+    if (game.frameDue(now)) game.frame(now);
     requestAnimationFrame(loop);
   };
   requestAnimationFrame(loop);

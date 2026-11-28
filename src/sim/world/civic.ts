@@ -62,6 +62,11 @@ export interface Civic {
    */
   staff?: number;
   powered?: number;
+  /**
+   * A player's own model for it (M46): the model's hash (16 hex digits). The sim never sees the model:
+   * the building is the same building whatever it looks like. Absent: the game's own look.
+   */
+  look?: string;
 }
 
 /** A day of garbage collection at one facility: units unloaded, rounds finished, their minutes and stops. */
@@ -269,7 +274,7 @@ export function checkPlacement(
   // The regional rail link is laid with its track on the west edge (buildRailLink), and stays put.
   if (def.railLink) return { ...res, reason: 'The regional rail link goes on the west edge with its track' };
   // A scenario's limits (M18) come first: no spot would do.
-  const forbidden = ignoreCivic ? null : scenarioForbids(sim, { civic: def.id });
+  const forbidden = ignoreCivic ? null : scenarioForbids(sim, { civic: def.id, at: [{ x, z }] });
   if (forbidden) return { ...res, reason: forbidden };
   // Military buildings (M34) only where war is on: rival neighbours, or a region at war.
   if (def.military && !sim.state.war)

@@ -1,22 +1,45 @@
 import { ROAD_TYPES, isPlayerRoad } from '../data/roads';
+import { touchScreen, touchWords } from './touchWords';
 import type { Game } from '../game';
 import { CIVIC } from '../data/civic';
 import { isMac } from './platform';
 import { ZONE_C, ZONE_I, ZONE_R } from '../data/zones';
 import { LONG_COMMUTE, TRAM } from '../data/balance';
 import { RAIDS } from '../data/battle';
+import type { CameraPose } from '../render/camera';
+import type { Screen } from '../game';
 
 /**
- * The first-city tutorial and contextual tips (DESIGN.md §5). Steps finish by themselves when the
- * player has done what they ask, so a tutorial resumed after a reload skips what's already built.
+ * The first-city tutorial and contextual tips (DESIGN.md §5, M42). Steps finish by themselves when the
+ * player has done what they ask, so a player who knows what to do is never held up, and a tutorial
+ * resumed after a reload skips what's already built. Some steps hold the game still while they're
+ * read, fly the camera to where it matters, or stay beside a panel; first problems (a fire, a power
+ * cut, a jam) get a short lesson of their own the moment they come.
  */
 export interface TutorialStep {
+  /** A stable name (screenshots, tests, the lessons already shown). */
+  id: string;
   title: string;
   text: string;
+  /**
+   * The words on a touch screen where `text` speaks of a mouse or keys (phase 6 end: a phone's first
+   * city was told to right-drag, scroll and press Esc). Shown by `wordsFor`.
+   */
+  touch?: string;
   /** Test id of the button to point at. */
   target?: string;
   /** The step is done once this holds; steps without it wait for "Next". */
   done?: (g: Game) => boolean;
+  /** Hold the game still while this is read; time runs again once the step is passed. */
+  pause?: true;
+  /** Where the camera flies when the step begins. */
+  camera?: (g: Game) => Partial<CameraPose> | null;
+  /** The card stays beside this panel while it's open (other panels hide it). */
+  panel?: Game['panel'];
+  /** The card shows over this screen (the pause menu, say) rather than hiding behind it. */
+  screen?: Screen;
+  /** A first-problem lesson: its moment (checked only once the city is running). */
+  when?: (g: Game) => boolean;
 }
 
 function hasZone(g: Game, zone: number): boolean {
@@ -29,77 +52,274 @@ function hasCivic(g: Game, test: (def: string, category: string) => boolean): bo
   return false;
 }
 
+const pop = (g: Game) => g.world.stats.population;
+
+/** The end of the highway, where a town starts. */
+function highwayEnd(g: Game): Partial<CameraPose> | null {
+  const n = g.world.netState.nodes.get(g.world.highway.connect);
+  return n ? { x: n.x + 160, z: n.z, distance: 520, yaw: 0.6, tilt: 0.25 } : null;
+}
+
+/** The middle of the town's buildings. */
+function townMiddle(g: Game): Partial<CameraPose> | null {
+  let x = 0;
+  let z = 0;
+  let n = 0;
+  for (const b of g.world.buildings.values()) {
+    x += b.x;
+    z += b.z;
+    n++;
+  }
+  return n ? { x: x / n, z: z / n, distance: 560 } : highwayEnd(g);
+}
+
+/** A building on fire. */
+function burning(g: Game): { x: number; z: number } | null {
+  for (const b of g.world.buildings.values()) if (b.flags & 128) return b;
+  return null;
+}
+
+const SERVICE_MAPS = new Set(['fire', 'police', 'health', 'education']);
+
 export const TUTORIAL: TutorialStep[] = [
   {
+    id: 'welcome',
     title: 'Welcome, Mayor',
     text:
-      'This valley is yours to build. Drag with the left mouse button to move around, the right button ' +
-      'to turn, and scroll to zoom (or use W A S D and Q E). Settlers arrive along the highway at the ' +
-      'edge of the map.',
+      'This valley is yours to build. Drag to move around, right-drag to turn, scroll to zoom. ' +
+      'Settlers arrive along the highway.',
+    touch:
+      'This valley is yours to build. Drag a finger to move around, pinch to zoom, twist two fingers to ' +
+      'turn. Settlers arrive along the highway.',
+    camera: highwayEnd,
   },
   {
+    id: 'road',
     title: 'Lay a road',
-    text:
-      'Pick the road tool and drag out from the end of the highway. Click to add bends; every road ' +
-      'needs to connect back to the highway so people can reach it.',
+    text: 'Pick the road tool. Drag out from the end of the highway. Every road must join the highway.',
     target: 'tool-road',
+    camera: highwayEnd,
     done: (g) => [...g.world.netState.segments.values()].some((s) => isPlayerRoad(s.type)),
   },
   {
+    id: 'homes',
     title: 'Zone homes',
-    text:
-      'Open the zone tool and paint residential land (green) along your road. Houses grow there when ' +
-      'people want to move in: watch the R bar in the top bar.',
+    text: 'Open the zone tool and paint homes (green) along your road. Houses grow where people want to live.',
     target: 'tool-zone',
     done: (g) => hasZone(g, ZONE_R),
   },
   {
+    id: 'jobs',
     title: 'Jobs and shops',
-    text:
-      'Residents need work. Zone some commercial land (blue) for shops and offices, and industry ' +
-      '(yellow) a little way off: factories are noisy and dirty.',
+    text: 'People need work. Zone shops (blue) near the homes, and industry (yellow) a little way off: it’s noisy.',
     target: 'tool-zone',
     done: (g) => hasZone(g, ZONE_C) && hasZone(g, ZONE_I),
   },
   {
+    id: 'power',
     title: 'Power',
-    text:
-      'Buildings need electricity. Place a power plant beside a road: wind turbines are cheap and clean, ' +
-      'coal is powerful but smoky. Power reaches every building along connected roads.',
+    text: 'Every building needs power. Place a power plant beside a road. Wind is cheap and clean.',
     target: 'tool-power',
     done: (g) => hasCivic(g, (_d, cat) => cat === 'power'),
   },
   {
+    id: 'water',
     title: 'Water and sewage',
     text:
-      'Place a water pump where the ground water is good, and septic tanks for the sewage, away from ' +
-      'homes. When the town reaches the river, an outflow there takes far more. The water tool shows ' +
-      'a map of ground water while you place.',
+      'Place a water pump where the ground water is good (the tool shows it). Then septic tanks for ' +
+      'the sewage, away from homes.',
     target: 'tool-water',
     done: (g) =>
       hasCivic(g, (d) => d === 'pump' || d === 'riverpump') &&
       hasCivic(g, (d) => d === 'septic' || d === 'outflow' || d === 'treatment'),
   },
   {
+    id: 'time',
     title: 'Let time run',
-    text: 'Press play (or the space bar) and speed up with 2 and 3. Watch the first families move in.',
+    text: 'Press play (or the space bar). Speed up with 2 and 3. Watch the first families move in.',
+    touch: 'Press play. The faster buttons beside it speed time up. Watch the first families move in.',
     target: 'speed-1',
-    done: (g) => g.world.stats.population >= 40,
+    done: (g) => pop(g) >= 40,
   },
   {
-    title: 'Keep the city happy',
+    id: 'demand',
+    title: 'What people want',
     text:
-      'Click any building to see how it is doing and why. The advisors (J) flag problems, the budget (M) ' +
-      'sets taxes and spending, and the layers button shows data maps. Fire, police, clinics and schools ' +
-      'come next. Good luck!',
+      'These bars show demand. A tall green R means people want homes; blue C, shops; yellow I, factories. ' +
+      'Zone more of whatever’s tall.',
+    target: 'rci',
+    pause: true,
+  },
+  {
+    id: 'grow150',
+    title: 'Grow to 150',
+    text: 'Zone more where the bars ask, along new roads. Keep homes near shops and away from industry.',
+    target: 'tool-zone',
+    camera: townMiddle,
+    done: (g) => pop(g) >= 150,
+  },
+  {
+    id: 'budget',
+    title: 'Your budget',
+    text: 'Money matters now. Click your money in the top bar to open the budget.',
+    touch: 'Money matters now. Tap your money in the top bar to open the budget.',
+    target: 'open-budget',
+    pause: true,
+    done: (g) => g.tutorialSaw.has('budget'),
+  },
+  {
+    id: 'taxes',
+    title: 'Taxes',
+    text:
+      'Taxes pay for everything. Each point brings in more, but above 9 % people stay away. Keep income ' +
+      'above costs: the net figure under your money.',
+    target: 'tax-R1',
+    panel: 'budget',
+    pause: true,
+  },
+  {
+    id: 'services',
+    title: 'Keep people safe',
+    text:
+      'A growing town needs services. Build a fire station, then a clinic or a police station, near ' +
+      'the homes.',
+    target: 'tool-fire',
+    camera: townMiddle,
+    done: (g) =>
+      hasCivic(g, (_d, cat) => cat === 'fire') &&
+      hasCivic(g, (_d, cat) => cat === 'health' || cat === 'police' || cat === 'education'),
+  },
+  {
+    id: 'coverage',
+    title: 'Who is covered',
+    text: 'Open the data maps and pick Fire. Green streets are covered; red ones need another station.',
+    target: 'tool-maps',
+    done: (g) => g.tutorialSaw.has('coverage'),
+  },
+  {
+    id: 'advisors',
+    title: 'Your advisors',
+    text:
+      'Your advisors say what’s wrong and what to do. Open them now; they’re the first place to look ' +
+      'when something goes wrong.',
     target: 'open-advisors',
+    pause: true,
+    done: (g) => g.tutorialSaw.has('advisors'),
+  },
+  {
+    id: 'grow500',
+    title: 'Grow to 500',
+    text: 'Keep zoning where demand is high. Add a school once families arrive. Watch the advisors.',
+    target: 'tool-zone',
+    done: (g) => pop(g) >= 500,
+  },
+  {
+    id: 'save',
+    title: 'Save your city',
+    text: 'Open the menu (Esc) and choose Save city or Quick save. The game also saves by itself every few minutes.',
+    touch:
+      'Open the menu (the ☰ button) and choose Save city or Quick save. The game also saves by itself every ' +
+      'few minutes.',
+    target: 'menu-button',
+    pause: true,
+    done: (g) => g.manualSaves > 0,
+  },
+  {
+    id: 'grow1000',
+    title: 'Grow to 1,000',
+    text: 'Almost a real town. Keep power and water ahead of demand, and keep the books balanced.',
+    camera: townMiddle,
+    done: (g) => pop(g) >= 1000,
+  },
+  {
+    id: 'finish',
+    title: 'A thousand people!',
+    text:
+      'Well done, Mayor. From here: bigger buildings unlock as you grow. Try Scenarios, or Learn on the ' +
+      'main menu for short lessons on traffic, money and more.',
+    pause: true,
   },
 ];
+
+/** The first problems, each taught once, the moment it comes (once the city is running). */
+export const TUTORIAL_EVENTS: TutorialStep[] = [
+  {
+    id: 'firstFire',
+    title: 'Fire!',
+    text:
+      'A building is on fire. Fire stations send engines to put fires out; without one nearby, fire ' +
+      'spreads along the street. Build one close to the homes.',
+    target: 'tool-fire',
+    pause: true,
+    camera: (g) => {
+      const b = burning(g);
+      return b ? { x: b.x, z: b.z, distance: 260 } : null;
+    },
+    when: (g) => !!burning(g),
+    done: (g) => !burning(g),
+  },
+  {
+    id: 'firstPowerCut',
+    title: 'The lights are going out',
+    text:
+      'Some buildings have no power: the town uses more than your plants make. Build another plant. Homes ' +
+      'without power for about two days start to empty.',
+    target: 'tool-power',
+    pause: true,
+    when: (g) => {
+      const p = g.world.stats.utilities.power;
+      return hasCivic(g, (_d, cat) => cat === 'power') && p.unserved >= 5 && p.demand > p.supply;
+    },
+    done: (g) => g.world.stats.utilities.power.unserved === 0,
+  },
+  {
+    id: 'firstJam',
+    title: 'A traffic jam',
+    text:
+      'Cars are queueing. Give the town a second road out, upgrade busy streets to avenues, or open the ' +
+      'data maps’ Traffic map to see where.',
+    target: 'tool-road',
+    pause: true,
+    when: (g) => g.advice.some((a) => a.advisor === 'transport' && a.severity >= 2),
+  },
+];
+
+/**
+ * A card's or tip's words for this screen: on a touch screen its own touch words where it has them,
+ * else its words read for a finger (`touchWords`: "Pause (Escape) → Report a problem", "City history
+ * (Y)", "Click it" read as "Pause → Report a problem", "City history", "Tap it").
+ */
+export function wordsFor(c: { text: string; touch?: string }, touch: boolean): string {
+  if (!touch) return c.text;
+  return c.touch ?? touchWords(c.text);
+}
+
+export { touchScreen };
+
+/** Every tutorial card's id (steps and first-problem lessons). */
+export const TUTORIAL_IDS = [...TUTORIAL, ...TUTORIAL_EVENTS].map((s) => s.id);
+
+/** Is this panel or data map one the tutorial watches for (it remembers having seen it)? */
+export function tutorialSaw(
+  panel: Game['panel'],
+  overlay: string | null,
+  screen: string | null = null,
+): string[] {
+  const out: string[] = [];
+  if (panel) out.push(`panel:${panel}`);
+  if (panel === 'budget' || panel === 'advisors') out.push(panel);
+  if (overlay) out.push(`map:${overlay}`);
+  if (overlay && SERVICE_MAPS.has(overlay)) out.push('coverage');
+  if (screen) out.push(`screen:${screen}`);
+  return out;
+}
 
 /** A tip shown once, the first time its situation comes up. */
 export interface Tip {
   id: string;
   text: string;
+  /** The words on a touch screen, where `text` speaks of a mouse or keys (see `TutorialStep.touch`). */
+  touch?: string;
   when: (g: Game) => boolean;
   /**
    * A moment that won't wait (a raid coming, a live battle, a bomb in the air): its tip goes before any
@@ -115,6 +335,9 @@ export const TIPS: Tip[] = [
       'This city is shared: everyone builds on the same map and money. The room button by the city name ' +
       'shows who is here, the invite link and the chat; its Point button (or Shift+G over the map) shows ' +
       'the others a spot.',
+    touch:
+      'This city is shared: everyone builds on the same map and money. The room button by the city name ' +
+      'shows who is here, the invite link and the chat; its Point button shows the others a spot.',
     when: (g) => !!g.net && g.net.session.state === 'playing',
   },
   {
@@ -455,6 +678,7 @@ export const TIPS: Tip[] = [
   {
     id: 'abandoned',
     text: 'A building was abandoned. Click it: the inspector says why (no power, no jobs, crime, pollution…).',
+    touch: 'A building was abandoned. Tap it: the inspector says why (no power, no jobs, crime, pollution…).',
     when: (g) => g.world.stats.abandoned > 0,
   },
   {
@@ -478,6 +702,10 @@ export const TIPS: Tip[] = [
       'A junction is jammed at the rush hour (the traffic map shows junctions as discs). A roundabout ' +
       'passes far more traffic: pick Roundabout in the road tool, or click one of its roads. One-way ' +
       'streets (O while drawing) carry a quarter more.',
+    touch:
+      'A junction is jammed at the rush hour (the traffic map shows junctions as discs). A roundabout ' +
+      'passes far more traffic: pick Roundabout in the road tool, or tap one of its roads. One-way ' +
+      'streets carry a quarter more.',
     when: (g) => g.world.stats.population > 1_000 && g.world.worstJunctionVC() > 1.1,
   },
   {
@@ -506,6 +734,10 @@ export const TIPS: Tip[] = [
       'Your city has neighbours along the highway. Their people commute in to jobs you can’t fill, yours ' +
       'take jobs there, and they’ll buy or sell power, water and garbage processing: see the Region panel ' +
       '(Shift+N, top bar).',
+    touch:
+      'Your city has neighbours along the highway. Their people commute in to jobs you can’t fill, yours ' +
+      'take jobs there, and they’ll buy or sell power, water and garbage processing: see the Region panel ' +
+      '(top bar).',
     when: (g) => g.world.stats.population >= 1_500 && g.world.stats.region.neighbours.length > 0,
   },
   {
@@ -528,6 +760,10 @@ export const TIPS: Tip[] = [
     text:
       'Snow slows every car on the roads it lies on until it melts. A public works depot (in the Garbage ' +
       'and snow bar) sends ploughs out to clear the busiest roads first. Hover the date for the weather.',
+    touch:
+      'Snow slows every car on the roads it lies on until it melts. A public works depot (in the Garbage ' +
+      'and snow bar) sends ploughs out to clear the busiest roads first. Press and hold the date for the ' +
+      'weather.',
     when: (g) => g.world.stats.weather.roadsSnowy > 0.2 && !hasCivic(g, (def) => def === 'works'),
   },
   {
@@ -615,6 +851,43 @@ export const TIPS: Tip[] = [
       'Big projects unlocked (the crane button): a stadium, a solar tower and a convention centre. Each is ' +
       'built in stages over months, paid for as each stage starts, and gives the city a lasting perk.',
     when: (g) => g.world.stats.peak >= 20_000 && !g.world.options.sandbox,
+  },
+  {
+    // Hearing about problems (M41): once a player has been at it a while, where to say something's wrong.
+    id: 'reportProblem',
+    text:
+      'Something not working as it should? Pause (Escape) → Report a problem sends a short note, and a ' +
+      'picture of the game if you like, to Citybloom’s maker. Crash reports go by themselves (never your ' +
+      'name, cities or chat) unless you switch them off in Settings → Game.',
+    when: (g) => g.mode === 'play' && !g.readOnly && !g.net && g.world.stats.tick > 2 * 24 * 60,
+  },
+  {
+    // The timelapse (M45): once a city has a year or two behind it, where its video is made.
+    id: 'timelapse',
+    text:
+      'Your city has been recording a timelapse as it grows. City history (Y) → Make timelapse turns it ' +
+      'into a short video, with its name, the date and its milestones on it, to keep or send to friends.',
+    when: (g) => {
+      const t = g.timelapse.info();
+      return g.mode === 'play' && !g.readOnly && !!t && Math.min(t.frames.wide, t.frames.orbit) >= 24;
+    },
+  },
+  {
+    // The weekly challenge (M44): what the score is and where it goes, once the city is under way.
+    id: 'challenge',
+    text:
+      'This is this week’s challenge: the same map, goals and twist for everyone. Your score grows with ' +
+      'the goals (G shows it so far); when they’re met or time’s up, post it to the board. Try as often ' +
+      'as you like: your best counts, and anyone can watch your run.',
+    when: (g) => g.mode === 'play' && !g.readOnly && !!g.challengeDef && !g.scenarioBrief,
+  },
+  {
+    // A challenge's board (M44): once a score is posted, the friends board.
+    id: 'challengeFriends',
+    text:
+      'Want a board just for you and your friends? On the challenge screen, Friends → Make a group gives ' +
+      'a code to share; scores you post from then on show on that group’s board too.',
+    when: (g) => g.mode === 'play' && !!g.challengeDef && g.challengePost.reply?.ok === true,
   },
 ];
 

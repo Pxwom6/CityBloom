@@ -1,4 +1,4 @@
-import { BufferAttribute, BufferGeometry } from 'three';
+import { BufferAttribute, BufferGeometry, type Sphere } from 'three';
 import type { ModelData } from './assets/builder';
 
 /**
@@ -7,10 +7,10 @@ import type { ModelData } from './assets/builder';
  */
 
 export class Arrays {
-  pos = new Float32Array(3 * 4096);
-  nrm = new Float32Array(3 * 4096);
-  col = new Float32Array(3 * 4096);
-  emi = new Float32Array(4096);
+  pos: Float32Array;
+  nrm: Float32Array;
+  col: Float32Array;
+  emi: Float32Array;
   clip: Float32Array | null;
   n = 0;
   /**
@@ -19,8 +19,53 @@ export class Arrays {
    * (M26). Null: every triangle in one run.
    */
   rest: Arrays | null;
+  /**
+   * Sized exactly beforehand (M49: `sizes`): the casters and the rest share one set of arrays, the
+   * rest written after the casters, so `geometry()` hands them over without growing or copying.
+   */
+  private whole: {
+    pos: Float32Array;
+    nrm: Float32Array;
+    col: Float32Array;
+    emi: Float32Array;
+    clip: Float32Array | null;
+  } | null = null;
 
-  constructor(withClip: boolean, split = false) {
+  /**
+   * `sizes`: the vertices that will be appended (casters, and with `split` the rest), when known:
+   * nothing grows. Without it the arrays start small and double as needed.
+   */
+  constructor(withClip: boolean, split = false, sizes?: { casters: number; rest: number }) {
+    if (sizes) {
+      const total = sizes.casters + (split ? sizes.rest : 0);
+      const w = {
+        pos: new Float32Array(3 * total),
+        nrm: new Float32Array(3 * total),
+        col: new Float32Array(3 * total),
+        emi: new Float32Array(total),
+        clip: withClip ? new Float32Array(total) : null,
+      };
+      this.whole = w;
+      const c = sizes.casters;
+      this.pos = w.pos.subarray(0, 3 * c);
+      this.nrm = w.nrm.subarray(0, 3 * c);
+      this.col = w.col.subarray(0, 3 * c);
+      this.emi = w.emi.subarray(0, c);
+      this.clip = w.clip ? w.clip.subarray(0, c) : null;
+      this.rest = split ? new Arrays(withClip) : null;
+      if (this.rest) {
+        this.rest.pos = w.pos.subarray(3 * c);
+        this.rest.nrm = w.nrm.subarray(3 * c);
+        this.rest.col = w.col.subarray(3 * c);
+        this.rest.emi = w.emi.subarray(c);
+        this.rest.clip = w.clip ? w.clip.subarray(c) : null;
+      }
+      return;
+    }
+    this.pos = new Float32Array(3 * 4096);
+    this.nrm = new Float32Array(3 * 4096);
+    this.col = new Float32Array(3 * 4096);
+    this.emi = new Float32Array(4096);
     this.clip = withClip ? new Float32Array(4096) : null;
     this.rest = split ? new Arrays(withClip) : null;
   }
@@ -28,6 +73,8 @@ export class Arrays {
   reserve(extra: number): void {
     const need = this.n + extra;
     if (need <= this.emi.length) return;
+    // Sized beforehand: nothing may grow (a size reckoned wrong would split the shared arrays).
+    if (this.whole) throw new Error('Arrays: more vertices than were sized for');
     const cap = Math.max(need, this.emi.length * 2);
     const grow = (a: Float32Array, k: number) => {
       const b = new Float32Array(cap * k);
@@ -46,25 +93,47 @@ export class Arrays {
     return this.n + (this.rest?.n ?? 0);
   }
 
-  geometry(): BufferGeometry {
+  /** The merged geometry; `bounds` when its bounding sphere is known already (M49: no pass over every vertex). */
+  geometry(bounds?: Sphere): BufferGeometry {
     const g = new BufferGeometry();
     const r = this.rest;
+    const w = this.whole;
+    // Filled exactly as sized: the shared arrays are the geometry's as they stand.
+    const exact = w && this.n * 3 === this.pos.length && (!r || r.n * 3 === r.pos.length);
     const join = (a: Float32Array, b: Float32Array | undefined, k: number): Float32Array => {
       const out = new Float32Array((this.n + (r?.n ?? 0)) * k);
       out.set(a.subarray(0, this.n * k));
       if (r && b) out.set(b.subarray(0, r.n * k), this.n * k);
       return out;
     };
-    g.setAttribute('position', new BufferAttribute(join(this.pos, r?.pos, 3), 3));
-    g.setAttribute('normal', new BufferAttribute(join(this.nrm, r?.nrm, 3), 3));
-    g.setAttribute('color', new BufferAttribute(join(this.col, r?.col, 3), 3));
-    g.setAttribute('emissive', new BufferAttribute(join(this.emi, r?.emi, 1), 1));
-    if (this.clip) g.setAttribute('clipY', new BufferAttribute(join(this.clip, r?.clip ?? undefined, 1), 1));
+    g.setAttribute('position', new BufferAttribute(exact ? w.pos : join(this.pos, r?.pos, 3), 3));
+    g.setAttribute('normal', new BufferAttribute(exact ? w.nrm : join(this.nrm, r?.nrm, 3), 3));
+    g.setAttribute('color', new BufferAttribute(exact ? w.col : join(this.col, r?.col, 3), 3));
+    g.setAttribute('emissive', new BufferAttribute(exact ? w.emi : join(this.emi, r?.emi, 1), 1));
+    if (this.clip)
+      g.setAttribute(
+        'clipY',
+        new BufferAttribute(exact && w.clip ? w.clip : join(this.clip, r?.clip ?? undefined, 1), 1),
+      );
     // The vertices that cast shadows come first.
     g.userData.casters = this.n;
-    g.computeBoundingSphere();
+    if (bounds) g.boundingSphere = bounds;
+    else g.computeBoundingSphere();
     return g;
   }
+}
+
+/** Vertices of a model that cast shadows (whole triangles), counted once per model (M49). */
+const CASTERS = new WeakMap<ModelData, number>();
+export function casterVertices(m: ModelData): number {
+  let n = CASTERS.get(m);
+  if (n === undefined) {
+    n = 0;
+    const tris = m.pos.length / 9;
+    for (let t = 0; t < tris; t++) if (casts(m, t)) n += 3;
+    CASTERS.set(m, n);
+  }
+  return n;
 }
 
 /** Shadow pass hooks for a mesh built from split `Arrays`: only the triangles that cast. */
@@ -133,8 +202,11 @@ export function appendModel(
   const c = Math.cos(yaw);
   const s = Math.sin(yaw);
   const n = m.pos.length / 3;
-  out.reserve(n);
-  out.rest?.reserve(n);
+  if (out.rest) {
+    const cv = casterVertices(m);
+    out.reserve(cv);
+    out.rest.reserve(n - cv);
+  } else out.reserve(n);
   const win = m.win;
   const lit = win && m.winChance ? litWindows(m.winChance, seed) : null;
   const dark = abandoned === true || char > 0.3;

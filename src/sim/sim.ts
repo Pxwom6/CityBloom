@@ -188,6 +188,8 @@ import {
   scenarioForbids,
   scenarioMonth,
   scenarioSummary,
+  challengeDef,
+  startChallenge,
   startScenario,
   type ScenarioSummary,
 } from './systems/scenario';
@@ -210,7 +212,7 @@ import { extractionPerDay, specialisationsHour } from './systems/specialisations
 import { POLICY, type PolicyId } from '../data/policies';
 import { decayCrime, splatField } from './systems/pollution';
 import type { ServiceKind } from '../data/civic';
-import { CIVIC, GARBAGE, UTILITIES, VEHICLE_SPEED_SCALE } from '../data/civic';
+import { CIVIC, GARBAGE, takesLook, UTILITIES, VEHICLE_SPEED_SCALE } from '../data/civic';
 import { MODULE } from '../data/modules';
 import { fieldAt, updateAirPollution, updateGroundPollution } from './systems/pollution';
 import { healthHour } from './systems/health';
@@ -510,7 +512,7 @@ export class Sim {
       tick: 0,
       nextId: 1,
       rng,
-      treasury: options.sandbox ? SANDBOX_FUNDS : DIFFICULTY[options.difficulty].funds,
+      treasury: startingFunds(options),
       cityName: options.cityName,
       trees: terrain.initialTrees.slice(),
       net: { nodes: new Map(), segments: new Map(), blocks: new Map() },
@@ -521,7 +523,7 @@ export class Sim {
       demand: emptyDemand(),
       landValue: new Float32Array(GRID_RES * GRID_RES),
       cursors: { growth: 0, matchRound: 0 },
-      economy: defaultEconomy(options.sandbox ? SANDBOX_FUNDS : DIFFICULTY[options.difficulty].funds),
+      economy: defaultEconomy(startingFunds(options)),
       civics: new Map(),
       vehicles: new Map(),
       groundPollution: new Float32Array(GRID_RES * GRID_RES),
@@ -563,6 +565,8 @@ export class Sim {
     sim.buildRailway();
     updateLandValue(sim, true);
     updateDemand(sim);
+    // A weekly challenge (M44) begins as its city is founded.
+    if (options.challenge) startChallenge(sim);
     return sim;
   }
 
@@ -916,13 +920,21 @@ export class Sim {
     return this.state.unlockAll || this.reached(population);
   }
 
+  /** A quick match's growth (M43): spawning, moving in, building speed and how much at once; 1 otherwise. */
+  growthPace(): number {
+    return this.state.options.match?.growth ?? 1;
+  }
+
   /**
    * Has the city itself grown this big (sandbox counts)? Zone densities go by this: the unlock-all
    * cheat opens up things to build, not how tall the city grows.
    */
   reached(population: number): boolean {
     const s = this.state;
-    return s.options.sandbox || Math.max(s.progress.peak, s.totals.population) >= population;
+    // A quick match's short path (M43): unlocks and taller buildings at a share of their population.
+    const m = s.options.match;
+    const need = m ? Math.ceil(population * m.unlock) : population;
+    return s.options.sandbox || Math.max(s.progress.peak, s.totals.population) >= need;
   }
 
   /** Roads nothing can drive along right now: damaged by a disaster, or under flood water. */
@@ -1448,16 +1460,40 @@ export class Sim {
         if (!dryRun) this.earn(cmd.amount, 'cheats');
         return ok(0);
       }
-      case 'placeBuilding':
-        return placeCivic(this, cmd.def, cmd.x, cmd.z, cmd.angle, cmd.side, dryRun);
+      case 'placeBuilding': {
+        // A player's own model for it (M46): the building is the same; only its look is theirs.
+        if (cmd.look !== undefined && !takesLook(cmd.def)) return fail(NO_LOOK);
+        const r = placeCivic(this, cmd.def, cmd.x, cmd.z, cmd.angle, cmd.side, dryRun);
+        if (r.ok && !dryRun && cmd.look) {
+          const c = this.state.civics.get(r.created?.[0] ?? -1);
+          if (c) c.look = cmd.look;
+        }
+        return r;
+      }
+      case 'setLook': {
+        const c = this.state.civics.get(cmd.civic);
+        if (!c) return fail('No such building');
+        if (!takesLook(c.def)) return fail(NO_LOOK);
+        if (!dryRun) {
+          if (cmd.look) c.look = cmd.look;
+          else delete c.look;
+          this.dirtyCivics.add(c.id);
+        }
+        return ok(0);
+      }
       case 'renameCity': {
+        // A weekly challenge's run is replayed for everyone to watch (M44): nothing typed goes in it.
+        if (challengeDef(this)) return fail(NO_NAMES);
         const name = cmd.name.trim().slice(0, 40);
         if (!name) return fail('Name cannot be empty');
         if (!dryRun) this.state.cityName = name;
         return ok(0);
       }
-      case 'buildRoad':
-        return buildRoad(this, cmd.road, cmd.points, dryRun, cmd.oneway);
+      case 'buildRoad': {
+        // A weekly challenge's twists (M44): road types it forbids, and a small map.
+        const no = scenarioForbids(this, { road: cmd.road, at: cmd.points });
+        return no ? fail(no) : buildRoad(this, cmd.road, cmd.points, dryRun, cmd.oneway);
+      }
       case 'setOneWay':
         return setOneWay(this, cmd.seg, cmd.dir, dryRun);
       case 'setTram':
@@ -1468,12 +1504,22 @@ export class Sim {
         return removeRoundabout(this, cmd.node, dryRun);
       case 'bulldoze':
         return bulldoze(this, cmd.target, dryRun);
-      case 'upgradeRoad':
-        return upgradeRoad(this, cmd.seg, cmd.road, dryRun);
-      case 'placeStop':
-        return placeStop(this, cmd.x, cmd.z, dryRun, !!cmd.tram);
+      case 'upgradeRoad': {
+        const no = scenarioForbids(this, { road: cmd.road });
+        return no ? fail(no) : upgradeRoad(this, cmd.seg, cmd.road, dryRun);
+      }
+      case 'placeStop': {
+        const no = scenarioForbids(this, { busStop: !cmd.tram, at: [{ x: cmd.x, z: cmd.z }] });
+        return no ? fail(no) : placeStop(this, cmd.x, cmd.z, dryRun, !!cmd.tram);
+      }
       case 'zone': {
-        const no = cmd.zone === 'none' ? null : scenarioForbids(this, { zone: cmd.zone });
+        const no =
+          cmd.zone === 'none'
+            ? null
+            : scenarioForbids(this, {
+                zone: cmd.zone,
+                ...(cmd.area.kind === 'brush' ? { at: cmd.area.points } : {}),
+              });
         return no ? fail(no) : zone(this, cmd.zone, cmd.area, dryRun);
       }
       case 'undo':
@@ -1634,6 +1680,11 @@ export class Sim {
         );
       case 'warClock':
         return warClock(this, cmd.cap, dryRun, !!cmd.left);
+      case 'endMatch': {
+        if (!this.state.options.match) return fail('This city isn’t in a quick match');
+        if (!dryRun) delete this.state.options.match;
+        return ok(0);
+      }
       case 'friendWar':
         return friendWar(this, cmd, dryRun);
       case 'friendTreaty':
@@ -1675,7 +1726,12 @@ export class Sim {
       case 'repayBond':
         return repayBond(this, cmd.id, dryRun);
       case 'createDistrict':
-        return createDistrict(this, cmd.name, dryRun);
+        // (In a weekly challenge, districts are named by number: M44.)
+        return createDistrict(
+          this,
+          challengeDef(this) ? `District ${this.state.districts.size + 1}` : cmd.name,
+          dryRun,
+        );
       case 'paintDistrict':
         return paintDistrict(this, cmd.district, cmd.area, dryRun);
       case 'terraform':
@@ -1689,7 +1745,7 @@ export class Sim {
       case 'setMapInfo':
         return setMapInfo(this, cmd.name, cmd.climate, dryRun);
       case 'renameDistrict':
-        return renameDistrict(this, cmd.district, cmd.name, dryRun);
+        return challengeDef(this) ? fail(NO_NAMES) : renameDistrict(this, cmd.district, cmd.name, dryRun);
       case 'removeDistrict':
         return removeDistrict(this, cmd.district, dryRun);
       case 'setDistrictPolicy':
@@ -1832,6 +1888,7 @@ export class Sim {
       case 'addModule':
       case 'moveBuilding':
       case 'buildRailLink':
+      case 'setLook':
         return FULL_SCOPE;
       default:
         return null;
@@ -1879,6 +1936,8 @@ export class Sim {
         return (MODULE.get(cmd.module)?.name ?? 'add-on').toLowerCase();
       case 'moveBuilding':
         return 'move';
+      case 'setLook':
+        return 'look';
       default:
         return cmd.type;
     }
@@ -2487,6 +2546,7 @@ export class Sim {
       flooded: c.flooded,
       modules: [...c.modules],
       stage: c.build?.stage,
+      ...(c.look ? { look: c.look } : {}),
     };
   }
 
@@ -3026,4 +3086,14 @@ function blockData(b: ZoneBlock): BlockData {
     valid: b.valid.slice(),
     bld: b.bld.slice(),
   };
+}
+
+/** What a new city starts with: the sandbox's, a quick match's fast start (M43), or the difficulty's. */
+/** Why names can't be typed in a weekly challenge (M44). */
+const NO_NAMES = 'Names can’t be changed in the weekly challenge: its replays are shown to everyone';
+const NO_LOOK = 'That building can’t take a model of your own';
+
+function startingFunds(options: GameOptions): number {
+  if (options.sandbox) return SANDBOX_FUNDS;
+  return options.challenge?.funds ?? options.match?.funds ?? DIFFICULTY[options.difficulty].funds;
 }

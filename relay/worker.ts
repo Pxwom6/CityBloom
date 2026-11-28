@@ -4,6 +4,9 @@
  *   wss://<relay>/room/<CODE>[?create=1]    a room (the same Room class the local relay runs)
  *   wss://<relay>/region/<CODE>[?create=1]  a shared region (M32)
  *   wss://<relay>/signal/<CODE>             signalling for peer-to-peer rooms
+ *   https://<relay>/report, /owner/...      problem reports and the owner area (M41, `relay/reportsHttp.ts`)
+ *   https://<relay>/challenge/...           the weekly challenge's board (M44, `relay/challengeHttp.ts`)
+ *   https://<relay>/submit, /submit/...     ideas and buildings players send in (M48, `relay/submissionsHttp.ts`)
  *
  * Rooms use the WebSocket Hibernation API, so a room nobody is talking to costs nothing; their
  * SQLite storage keeps the city between sessions (the latest snapshot and the events since). The
@@ -15,28 +18,66 @@
 import { DurableObject } from 'cloudflare:workers';
 import { RegionHost, RoomHost, SignalHost, route, type HostSocket, type SocketTag } from './objects';
 import type { RoomEnv } from './room';
+import { ReportDesk } from './reportDesk';
+import { corsHeaders, reportsHttp } from './reportsHttp';
+import { REPORT_CAPS } from './reports';
+import { ChallengeBoard, BOARD_LIMITS } from './challengeBoard';
+import { challengeHttp, isBoardPath } from './challengeHttp';
+import { SubmissionsDesk, SUBMIT_LIMITS } from './submissions';
+import { isSubmitPath, submissionsHttp } from './submissionsHttp';
 
 interface Env {
   ROOMS: DurableObjectNamespace;
   SIGNALS: DurableObjectNamespace;
   REGIONS: DurableObjectNamespace;
+  /** The report desk (M41): one object holds every report. */
+  REPORTS: DurableObjectNamespace;
+  /** The weekly challenge's board (M44): one object holds every week's. */
+  CHALLENGES: DurableObjectNamespace;
+  SUBMISSIONS: DurableObjectNamespace;
   /** Comma-separated origins allowed to connect (the site); empty allows any (development). */
   ALLOWED_ORIGINS?: string;
+  /** The owner area's key (M41), a Worker secret the deploy workflow sets from the GitHub secret. */
+  OWNER_KEY?: string;
 }
+
+const allowedOrigins = (env: Env): string[] =>
+  (env.ALLOWED_ORIGINS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     if (url.pathname === '/health')
       return new Response('citybloom relay', { headers: { 'access-control-allow-origin': '*' } });
+    // The weekly challenge's board and its owner pages (M44): plain HTTP to the one board.
+    if (isBoardPath(url.pathname)) {
+      const cors = corsHeaders(req.headers.get('Origin') ?? '', allowedOrigins(env));
+      if (!cors) return new Response('forbidden', { status: 403 });
+      if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+      return env.CHALLENGES.get(env.CHALLENGES.idFromName('challenges')).fetch(req);
+    }
+    // Ideas and buildings players send in, and their owner pages (M48): plain HTTP to the one desk.
+    if (isSubmitPath(url.pathname)) {
+      const cors = corsHeaders(req.headers.get('Origin') ?? '', allowedOrigins(env));
+      if (!cors) return new Response('forbidden', { status: 403 });
+      if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+      return env.SUBMISSIONS.get(env.SUBMISSIONS.idFromName('submissions')).fetch(req);
+    }
+    // Problem reports and the owner area (M41): plain HTTP to the one report desk.
+    if (url.pathname === '/report' || url.pathname.startsWith('/owner/')) {
+      const cors = corsHeaders(req.headers.get('Origin') ?? '', allowedOrigins(env));
+      if (!cors) return new Response('forbidden', { status: 403 });
+      if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+      return env.REPORTS.get(env.REPORTS.idFromName('reports')).fetch(req);
+    }
     const r = route(url.pathname, url.search);
     if (!r) return new Response('not found', { status: 404 });
     if (req.headers.get('Upgrade') !== 'websocket')
       return new Response('expected a WebSocket', { status: 426 });
-    const allowed = (env.ALLOWED_ORIGINS ?? '')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const allowed = allowedOrigins(env);
     const origin = req.headers.get('Origin') ?? '';
     if (allowed.length && !allowed.includes(origin)) return new Response('forbidden', { status: 403 });
     const ns = r.kind === 'room' ? env.ROOMS : r.kind === 'region' ? env.REGIONS : env.SIGNALS;
@@ -161,5 +202,162 @@ export class SignalObject extends DurableObject<Env> {
 
   async webSocketClose(ws: CfWebSocket): Promise<void> {
     this.hub.closed(this.sockets.of(ws));
+  }
+}
+
+/**
+ * A request's body read no further than `max` characters (the rest is left unread): a body sent in
+ * chunks has no length to refuse it by, and mustn't be read whole into the object's memory.
+ */
+async function boundedText(req: Request, max: number): Promise<string> {
+  if (!req.body) return '';
+  const reader = req.body.getReader();
+  const decoder = new TextDecoder();
+  let out = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    out += decoder.decode(value, { stream: true });
+    if (out.length > max) {
+      await reader.cancel();
+      break;
+    }
+  }
+  return out;
+}
+
+/**
+ * The report desk (M41, `ReportDesk`): every problem report and the owner area's requests. Reports
+ * not seen for 60 days are deleted by an alarm that rings once a day while anything is kept.
+ */
+export class ReportsObject extends DurableObject<Env> {
+  private readonly desk: ReportDesk;
+
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    this.desk = new ReportDesk(ctx.storage.sql, Date.now());
+  }
+
+  async fetch(req: Request): Promise<Response> {
+    const url = new URL(req.url);
+    const now = Date.now();
+    const r = await reportsHttp(
+      {
+        method: req.method,
+        path: url.pathname,
+        query: url.searchParams,
+        header: (n) => req.headers.get(n),
+        text: () => boundedText(req, REPORT_CAPS.body + 1),
+        // For the rate limit in the moment only: hashed in memory, never stored.
+        address: req.headers.get('CF-Connecting-IP') ?? '',
+      },
+      this.desk,
+      this.env.OWNER_KEY,
+      now,
+    );
+    const cors = corsHeaders(req.headers.get('Origin') ?? '', allowedOrigins(this.env)) ?? {};
+    if (req.method === 'POST' && url.pathname === '/report' && (await this.ctx.storage.getAlarm()) === null) {
+      const at = this.desk.nextSweep(now);
+      if (at !== null) await this.ctx.storage.setAlarm(at);
+    }
+    return new Response(r ? JSON.stringify(r.json) : 'not found', {
+      status: r?.status ?? 404,
+      headers: { 'content-type': r ? 'application/json' : 'text/plain', ...cors },
+    });
+  }
+
+  override async alarm(): Promise<void> {
+    const now = Date.now();
+    if (this.desk.sweep(now)) await this.ctx.storage.setAlarm(now + 86_400_000);
+  }
+}
+
+/**
+ * The weekly challenge's board (M44, `ChallengeBoard`): every week's scores, runs to watch, the
+ * owner's pins and word filter. Weeks before last are deleted on each write and by an alarm that rings
+ * once a week, at the change.
+ */
+export class ChallengeObject extends DurableObject<Env> {
+  private readonly board: ChallengeBoard;
+
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    this.board = new ChallengeBoard(ctx.storage.sql, Date.now());
+  }
+
+  async fetch(req: Request): Promise<Response> {
+    const url = new URL(req.url);
+    const now = Date.now();
+    const r = await challengeHttp(
+      {
+        method: req.method,
+        path: url.pathname,
+        query: url.searchParams,
+        header: (n) => req.headers.get(n),
+        text: () => boundedText(req, BOARD_LIMITS.body + 1),
+        // For rate limits in the moment only: hashed in memory, never stored.
+        address: req.headers.get('CF-Connecting-IP') ?? '',
+      },
+      this.board,
+      this.env.OWNER_KEY,
+      now,
+    );
+    const cors = corsHeaders(req.headers.get('Origin') ?? '', allowedOrigins(this.env)) ?? {};
+    if (req.method === 'POST' && (await this.ctx.storage.getAlarm()) === null)
+      await this.ctx.storage.setAlarm(this.board.nextSweep(now));
+    return new Response(r ? JSON.stringify(r.json) : 'not found', {
+      status: r?.status ?? 404,
+      headers: { 'content-type': r ? 'application/json' : 'text/plain', ...cors },
+    });
+  }
+
+  override async alarm(): Promise<void> {
+    const now = Date.now();
+    if (this.board.sweep(now)) await this.ctx.storage.setAlarm(this.board.nextSweep(now));
+  }
+}
+
+/**
+ * Ideas and buildings players send in (M48, `SubmissionsDesk`): only the owner sees them, a player
+ * their own by a private token, everyone what the owner accepted. Declined ones are deleted 30 days
+ * after the decision, by an alarm that rings once a day while there are any, and on each submission.
+ */
+export class SubmissionsObject extends DurableObject<Env> {
+  private readonly desk: SubmissionsDesk;
+
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    this.desk = new SubmissionsDesk(ctx.storage.sql, Date.now());
+  }
+
+  async fetch(req: Request): Promise<Response> {
+    const url = new URL(req.url);
+    const now = Date.now();
+    const r = await submissionsHttp(
+      {
+        method: req.method,
+        path: url.pathname,
+        query: url.searchParams,
+        header: (n) => req.headers.get(n),
+        text: () => boundedText(req, SUBMIT_LIMITS.body + 1),
+        // For rate limits in the moment only: hashed in memory, never stored.
+        address: req.headers.get('CF-Connecting-IP') ?? '',
+      },
+      this.desk,
+      this.env.OWNER_KEY,
+      now,
+    );
+    const cors = corsHeaders(req.headers.get('Origin') ?? '', allowedOrigins(this.env)) ?? {};
+    if (req.method === 'POST' && (await this.ctx.storage.getAlarm()) === null)
+      await this.ctx.storage.setAlarm(this.desk.nextSweep(now));
+    return new Response(r ? JSON.stringify(r.json) : 'not found', {
+      status: r?.status ?? 404,
+      headers: { 'content-type': r ? 'application/json' : 'text/plain', ...cors },
+    });
+  }
+
+  override async alarm(): Promise<void> {
+    const now = Date.now();
+    if (this.desk.sweep(now)) await this.ctx.storage.setAlarm(this.desk.nextSweep(now));
   }
 }

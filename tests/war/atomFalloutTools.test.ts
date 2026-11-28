@@ -53,7 +53,12 @@ describe('M40: the zone tool says why closed ground stays unpainted', () => {
       setHint() {},
       notify() {},
       world: {
-        net: { nearestSegment: (p: { x: number; z: number }, r: number) => sim.net.nearestSegment(p, r) },
+        net: {
+          nearestSegment: (p: { x: number; z: number }, r: number, filter?: (id: number) => boolean) =>
+            sim.net.nearestSegment(p, r, filter),
+        },
+        // (The zone tool reads the roads too: it paints a stroke's front row along the kerb; phase 6 end.)
+        netState: sim.state.net,
       },
     } as unknown as Game;
     return { tool: new ZoneTool(game), toasts, sounds };

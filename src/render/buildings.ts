@@ -16,6 +16,7 @@ import { CELL } from '../data/zones';
 import { VARIANTS, assets } from './assets/registry';
 import { LodChunks, type ChunkItem, type LodMaterials, type LodRange } from './lodChunks';
 import { Arrays, appendModel } from './modelMerge';
+import { releaseAfterUpload } from './release';
 import type { ModelData } from './assets/builder';
 import type { TerrainUniforms } from './terrain';
 import { GRADE_GLSL, SEASON_GLSL, SNOW_COLOUR, SNOW_NOISE_GLSL, type WeatherUniforms } from './weather';
@@ -26,6 +27,10 @@ const STATE_CONSTRUCTION = 0;
 const STATE_ABANDONED = 2;
 const STATE_RUBBLE = 3;
 const SCAFFOLD = new Color('#c98b4a');
+/** Construction sites are drawn in cells this size (m), and this many stale cells redrawn a frame (M49). */
+const SITE_CELL = 256;
+const SITE_BUDGET = 2;
+const siteCell = (x: number, z: number) => Math.floor(x / SITE_CELL) * 1000 + Math.floor(z / SITE_CELL);
 const WINDOW_LIGHT = new Color('#ffd49a');
 
 export interface BuildingUniforms {
@@ -213,9 +218,21 @@ export class BuildingRenderer {
   readonly lodMaterials: LodMaterials;
   private clipMaterial: Material;
   readonly chunks: LodChunks;
-  private construction: Mesh | null = null;
-  private constructionDirty = true;
-  private constructionKeys = '';
+  /**
+   * Construction sites by cell of `SITE_CELL` m (M49): a site's progress redraws only its own
+   * cell's mesh, a few cells a frame, where one mesh of every site in the city was built again each
+   * time any of them rose a step (a busy city's slowest work on a phone).
+   */
+  private sites = new Map<number, number>();
+  private siteCells = new Map<number, { ids: Set<number>; mesh: Mesh | null; key: string; dirty: boolean }>();
+  /** Scaffolds by size, height and step: alike sites at the same stage share one (M49). */
+  private scaffolds = new Map<string, ModelData>();
+  /**
+   * The least time (ms) between two construction cells redrawn (M49: the Phone preset, 250, so a busy
+   * city's rising sites cost a slow phone a few redraws a second). 0: `SITE_BUDGET` a frame.
+   */
+  siteEvery = 0;
+  private siteAt = -Infinity;
   /** Model heights by building, for picking. */
   readonly heights = new Map<number, number>();
   /**
@@ -281,9 +298,29 @@ export class BuildingRenderer {
     };
   }
 
+  /** Keep the construction cells up to date with a building that appeared, changed or went. */
+  private placeSite(id: number, b: BuildingData | undefined): void {
+    const was = this.sites.get(id);
+    const k = b && b.state === STATE_CONSTRUCTION ? siteCell(b.x, b.z) : undefined;
+    if (was !== undefined && was !== k) {
+      const c = this.siteCells.get(was);
+      if (c) {
+        c.ids.delete(id);
+        c.dirty = true;
+      }
+      this.sites.delete(id);
+    }
+    if (k === undefined) return;
+    this.sites.set(id, k);
+    let c = this.siteCells.get(k);
+    if (!c) this.siteCells.set(k, (c = { ids: new Set(), mesh: null, key: '', dirty: true }));
+    c.ids.add(id);
+    c.dirty = true;
+  }
+
   private place(id: number): void {
-    this.constructionDirty = true;
     const b = this.world.buildings.get(id);
+    this.placeSite(id, b);
     if (!b) {
       this.heights.delete(id);
       this.looks.delete(id);
@@ -367,34 +404,71 @@ export class BuildingRenderer {
     appendModel(out, m, b.x, b.y, b.z, buildingYaw(b), look, clipTo, b.id);
   }
 
-  private rebuildConstruction(): void {
-    const list = [...this.world.buildings.values()]
-      .filter((b) => b.state === STATE_CONSTRUCTION)
-      .sort((a, b) => a.id - b.id);
-    const key = list.map((b) => `${b.id}:${b.def}:${Math.floor(b.progress * 20)}`).join(',');
-    if (key === this.constructionKeys) return;
-    this.constructionKeys = key;
-    if (this.construction) {
-      this.group.remove(this.construction);
-      this.construction.geometry.dispose();
-      this.construction = null;
+  /**
+   * Redraw stale construction cells: `budget` of them (all with Infinity), each only if a site in
+   * it came, went or rose a step (5 % of its progress).
+   */
+  private rebuildConstruction(budget = SITE_BUDGET): void {
+    const now = performance.now();
+    if (budget !== Infinity && this.siteEvery > 0) {
+      if (now - this.siteAt < this.siteEvery) return;
+      budget = 1;
     }
-    if (!list.length) return;
-    const arr = new Arrays(true);
-    for (const b of list) {
-      const m = this.model(b);
-      const p = Math.min(1, Math.max(0, b.progress));
-      const rise = Math.max(0, (p - 0.12) / 0.88);
-      const top = m.height * rise;
-      this.append(b, m, arr, b.y + Math.max(0.1, top));
-      this.appendScaffold(b, top + 1.2, p, arr);
+    for (const [k, c] of this.siteCells) {
+      if (budget <= 0) break;
+      if (!c.dirty) continue;
+      c.dirty = false;
+      const list = [...c.ids]
+        .map((id) => this.world.buildings.get(id))
+        .filter((b): b is BuildingData => !!b && b.state === STATE_CONSTRUCTION)
+        .sort((a, b) => a.id - b.id);
+      const key = list.map((b) => `${b.id}:${b.def}:${Math.floor(b.progress * 20)}`).join(',');
+      if (list.length && key === c.key && c.mesh) continue;
+      c.key = key;
+      budget--;
+      this.siteAt = now;
+      if (c.mesh) {
+        this.group.remove(c.mesh);
+        c.mesh.geometry.dispose();
+        c.mesh = null;
+      }
+      if (!list.length) {
+        this.siteCells.delete(k);
+        continue;
+      }
+      const arr = new Arrays(true);
+      for (const b of list) {
+        const m = this.model(b);
+        // Drawn at its step, so alike sites at the same stage share a scaffold.
+        const p = Math.min(1, Math.max(0, Math.floor(b.progress * 20) / 20));
+        const rise = Math.max(0, (p - 0.12) / 0.88);
+        const top = m.height * rise;
+        this.append(b, m, arr, b.y + Math.max(0.1, top));
+        this.appendScaffold(b, top + 1.2, p, arr);
+      }
+      const geometry = arr.geometry();
+      releaseAfterUpload(geometry);
+      const mesh = new Mesh(geometry, this.clipMaterial);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.name = `construction-${k}`;
+      c.mesh = mesh;
+      this.group.add(mesh);
     }
-    const mesh = new Mesh(arr.geometry(), this.clipMaterial);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    mesh.name = 'construction';
-    this.construction = mesh;
-    this.group.add(mesh);
+  }
+
+  /** Drop every drawn chunk and site so all are built again (the GPU's context came back, M49). */
+  redrawAll(): void {
+    this.chunks.reset();
+    for (const c of this.siteCells.values()) {
+      if (c.mesh) {
+        this.group.remove(c.mesh);
+        c.mesh.geometry.dispose();
+        c.mesh = null;
+      }
+      c.key = '';
+      c.dirty = true;
+    }
   }
 
   /** Poles and planks around the lot up to height h. */
@@ -426,7 +500,14 @@ export class BuildingRenderer {
     }
     // Foundation slab appears first.
     bars.push([-W / 2, W / 2, 0, 0.3 + progress * 0.4, -D / 2, D / 2]);
-    const mdl = boxesModel(bars, SCAFFOLD);
+    const key = `${b.w}x${b.d}:${top.toFixed(2)}:${progress.toFixed(2)}`;
+    let mdl = this.scaffolds.get(key);
+    if (!mdl) {
+      mdl = boxesModel(bars, SCAFFOLD);
+      // A few hundred sizes and stages at most in a city; start afresh rather than grow for ever.
+      if (this.scaffolds.size > 2000) this.scaffolds.clear();
+      this.scaffolds.set(key, mdl);
+    }
     this.append(b, mdl, out, 1e6);
   }
 
@@ -445,10 +526,7 @@ export class BuildingRenderer {
     else if (f === 3) this.uniforms.uLod.value.set(-4, -3, -2, -1);
     else this.uniforms.uLod.value.set(r.nearStart, r.nearEnd, r.skyStart, r.skyEnd);
     this.chunks.update(this.eye, this.range);
-    if (this.constructionDirty) {
-      this.constructionDirty = false;
-      this.rebuildConstruction();
-    }
+    this.rebuildConstruction();
   }
 
   private eye = new Vector3(0, 1e6, 0);
@@ -456,7 +534,7 @@ export class BuildingRenderer {
   /** Finish all pending chunk rebuilds now (tests and screenshots). */
   flushAll(): void {
     this.chunks.update(this.eye, this.range, true);
-    this.rebuildConstruction();
+    this.rebuildConstruction(Infinity);
   }
 }
 

@@ -1,6 +1,8 @@
 import type { Chronicle } from './systems/chronicle';
 import type { ElectionState } from './systems/elections';
 import type { MapPreset } from '../data/world';
+import type { MatchStart } from '../data/match';
+import type { ChallengeDef } from '../data/challenges';
 import type { Difficulty } from '../data/economy';
 import type { RngState } from './rng';
 import type { NetworkState } from './world/network';
@@ -52,6 +54,16 @@ export interface GameOptions {
    * battles. Off unless set; a peaceful city's options have no such key, so its saves are as before.
    */
   rivals?: boolean;
+  /**
+   * A quick match's fast start (M43): more money, quicker growth and a short unlock path. Absent in
+   * every other city; taken away when a player keeps the city as an ordinary save (`endMatch`).
+   */
+  match?: MatchStart;
+  /**
+   * A weekly challenge (M44): its whole definition, so the city is founded from its options alone (a
+   * run's replay needs nothing more than these and its commands); `Sim.create` starts it.
+   */
+  challenge?: ChallengeDef;
 }
 
 export const DEFAULT_OPTIONS: GameOptions = {

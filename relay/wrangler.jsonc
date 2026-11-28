@@ -9,9 +9,21 @@
       { "name": "ROOMS", "class_name": "RoomObject" },
       { "name": "SIGNALS", "class_name": "SignalObject" },
       { "name": "REGIONS", "class_name": "RegionObject" },
+      { "name": "REPORTS", "class_name": "ReportsObject" },
+      { "name": "CHALLENGES", "class_name": "ChallengeObject" },
+      { "name": "SUBMISSIONS", "class_name": "SubmissionsObject" },
     ],
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RoomObject", "SignalObject", "RegionObject"] }],
+  // Each new Durable Object class needs a migration of its own (phase 6 adds one per desk).
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["RoomObject", "SignalObject", "RegionObject"] },
+    { "tag": "v2", "new_sqlite_classes": ["ReportsObject"] },
+    { "tag": "v3", "new_sqlite_classes": ["ChallengeObject"] },
+    { "tag": "v4", "new_sqlite_classes": ["SubmissionsObject"] },
+  ],
+  // OWNER_KEY is a secret (M41): set by the deploy workflow from the GitHub secret, never written here.
   "vars": { "ALLOWED_ORIGINS": "https://pxwom6.github.io" },
-  "observability": { "enabled": true },
+  // Logs keep what the code prints, never each request's details (its headers carry the caller's
+  // address, which phase 6 doesn't keep beyond rate limits in the moment).
+  "observability": { "enabled": true, "logs": { "invocation_logs": false } },
 }

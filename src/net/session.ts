@@ -18,6 +18,7 @@ import {
   type Presence,
   type RoomInfo,
   type RoomMsg,
+  type ModelPartMsg,
   type Speed,
 } from '../../relay/protocol';
 import type { SharedMessage } from '../client/simClient';
@@ -65,6 +66,20 @@ export function leadTicks(speed: Speed, tps: readonly number[] = SPEED_TICKS_PER
   return Math.max(48, tps[speed]! * 3);
 }
 
+/**
+ * Does the pacer keep time within its lead of this player? Anyone in step whose game is in front, and
+ * (M49) a player catching up while the room holds the city for them.
+ */
+/**
+ * How far ahead of a player catching up the pacer may run (ticks, M49): inside the room's reach for
+ * being in step (`CAUGHT_UP`, 120), so a held joiner always gets there.
+ */
+export const CATCH_UP_LEAD = 60;
+
+export function waitedFor(p: PlayerInfo): boolean {
+  return p.online && p.visible && (!p.joining || !!p.catchUp);
+}
+
 export class RoomSession {
   state: SessionState = 'connecting';
   you = 0;
@@ -103,10 +118,15 @@ export class RoomSession {
   /** Where the others are and what they're doing (M31), with when it was heard (ms). */
   readonly presence = new Map<number, Presence & { heard: number }>();
   onPing: ((from: number, at: [number, number]) => void) | null = null;
+  /** The room says a player fell out of step (M41: the page files a desync report). */
+  onResync: ((m: Extract<RoomMsg, { t: 'resync' }>) => void) | null = null;
   onChange: (() => void) | null = null;
   onNotice: ((n: NetNotice) => void) | null = null;
   /** Every command the room ordered, once this sim applied it (for "who did what"). */
   onApplied: ((a: Applied) => void) | null = null;
+  /** Players' own models (M46): another page lacks one; a part of one this page asked for. */
+  onModelNeed: ((from: number, hash: string) => void) | null = null;
+  onModelPart: ((m: ModelPartMsg & { from: number }) => void) | null = null;
 
   constructor(
     private readonly driver: SimDriver,
@@ -311,6 +331,12 @@ export class RoomSession {
       case 'ping':
         this.onPing?.(m.from, m.at);
         return;
+      case 'mneed':
+        this.onModelNeed?.(m.from, m.hash);
+        return;
+      case 'mpart':
+        this.onModelPart?.(m);
+        return;
       case 'ticks':
         for (const [id, tick] of m.ticks) {
           const p = this.players.find((x) => x.id === id);
@@ -322,6 +348,11 @@ export class RoomSession {
         this.changed();
         return;
       case 'resync':
+        try {
+          this.onResync?.(m);
+        } catch {
+          /* a report is never worth breaking the catching-up for */
+        }
         this.notice(m.player === this.you ? 'Your game fell out of step; catching up' : m.text, 'warn');
         if (m.player === this.you) {
           this.state = 'joining';
@@ -410,10 +441,14 @@ export class RoomSession {
     const visible = this.opts.visible?.() ?? true;
     const now = this.now();
     const quiet = tick === this.lastStatus.tick && visible === this.lastStatus.visible && !this.sums.length;
+    // Who the city waits for, also while it stands still waiting for them (M49: a held joiner).
+    this.updateWaiting(now);
     // Report while the city runs; when it stands still, only a keep-alive now and then, which an
     // online room answers without waking up.
     // While joining, keep the room hearing from us (it checks on a stalled snapshot as messages come).
-    if (quiet && this.state === 'joining' && now - this.lastStatus.at > 2000) {
+    // So does a player the room still counts as catching up (M49: its hold ends on a message).
+    const catching = this.players.some((p) => p.id === this.you && p.joining);
+    if (quiet && (this.state === 'joining' || catching) && now - this.lastStatus.at > 2000) {
       this.lastStatus.at = now;
       this.send({ t: 'status', tick, visible });
       return;
@@ -428,7 +463,6 @@ export class RoomSession {
     this.lastStatus = { tick, at: now, visible };
     const sums = this.sums.splice(0);
     this.send({ t: 'status', tick, visible, ...(sums.length ? { sums } : {}) });
-    this.updateWaiting(now);
   }
 
   /** The pacer moves time on, at the room's speed, never more than a lead ahead of the slowest player. */
@@ -445,12 +479,22 @@ export class RoomSession {
     const n = Math.floor(this.clockAcc);
     if (n < 1) return;
     let slowest = this.driver.tick;
-    for (const p of this.players)
-      // Not waited for: players catching up, and games in a background tab (the browser slows them
-      // right down); they catch up when they come back.
-      if (p.online && !p.joining && p.visible && p.id !== this.you) slowest = Math.min(slowest, p.tick);
+    let catching = Infinity;
+    for (const p of this.players) {
+      // Not waited for: games in a background tab (the browser slows them right down), and players
+      // catching up once the room's hold for them is over (M49); they catch up when they come back.
+      if (!waitedFor(p) || p.id === this.you) continue;
+      slowest = Math.min(slowest, p.tick);
+      // A player catching up is waited for closer, so they come within the room's in-step reach.
+      if (p.joining) catching = Math.min(catching, p.tick);
+    }
     const lead = leadTicks(room.speed, this.tps);
-    const target = Math.min(this.allowed + n, slowest + lead, this.allowed + MAX_CLOCK_STEP);
+    const target = Math.min(
+      this.allowed + n,
+      slowest + lead,
+      catching + Math.min(lead, CATCH_UP_LEAD),
+      this.allowed + MAX_CLOCK_STEP,
+    );
     if (target <= this.allowed) {
       // Waiting: don't bank the time, or the city would race to catch up afterwards.
       this.clockAcc = Math.min(this.clockAcc, 2);
@@ -468,9 +512,11 @@ export class RoomSession {
     if (speed > 0 && this.state === 'playing' && now - this.lastAllowAt > 1500) {
       let slow: PlayerInfo | null = null;
       for (const p of this.players)
-        if (p.online && !p.joining && p.visible && p.id !== this.you && (!slow || p.tick < slow.tick))
-          slow = p;
-      if (slow && slow.tick < this.allowed - leadTicks(speed, this.tps) / 2) who = slow.name;
+        if (waitedFor(p) && p.id !== this.you && (!slow || p.tick < slow.tick)) slow = p;
+      const lead = leadTicks(speed, this.tps);
+      // A player catching up is waited for closer (M49).
+      const reach = slow?.joining ? Math.min(lead, CATCH_UP_LEAD) : lead;
+      if (slow && slow.tick < this.allowed - reach / 2) who = slow.name;
     }
     if (who !== this.waitingFor) {
       this.waitingFor = who;
@@ -518,6 +564,21 @@ export class RoomSession {
 
   setSpendLimit(limit: number | null): void {
     this.send({ t: 'rules', spendLimit: limit });
+  }
+
+  /** The host: players' own buildings on or off in the room (M46). */
+  setCustomBuildings(on: boolean): void {
+    this.send({ t: 'rules', customBuildings: on });
+  }
+
+  /** Ask the others for a model the city's buildings wear (M46). */
+  askModel(hash: string, not?: number[]): void {
+    this.send({ t: 'mneed', hash, ...(not?.length ? { not } : {}) });
+  }
+
+  /** A part of a model another page asked for. */
+  sendModelPart(m: ModelPartMsg): void {
+    this.send(m);
   }
 
   admin(action: AdminAction, player?: number): void {

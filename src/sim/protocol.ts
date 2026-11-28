@@ -13,6 +13,7 @@ import type { TerrainParams } from './terrain/generate';
 import type { MapData } from './terrain/customMap';
 import type { ClimateId } from '../data/climate';
 import type { Command, CommandResult } from './commands';
+import type { RunEntry } from './runReplay';
 import type { GameOptions } from './state';
 import type { SaveFile } from './save';
 import type { Speed } from './time';
@@ -422,6 +423,8 @@ export interface CivicData {
   modules: string[];
   /** Big projects (M17): the stage under construction, absent once finished. */
   stage?: number;
+  /** A player's own model for it (M46), by hash. */
+  look?: string;
 }
 
 export interface VehicleData {
@@ -593,14 +596,34 @@ export type MainToWorker =
   | { type: 'preview'; id: number; cmd: Command }
   | { type: 'query'; id: number; q: Query }
   | { type: 'setSpeed'; speed: Speed }
+  /**
+   * A quick match's clock (M43): run the city towards the tick the time since the match's start allows
+   * at the match speed (`startIn` ms from now, negative once begun), never past `endTick`, catching up
+   * as fast as the time budget lets it; `stop`: hold where it is now (a Race won); `off`: back to the
+   * chosen speed (the city is kept as an ordinary one).
+   */
+  | { type: 'matchClock'; startIn: number; endTick: number }
+  | { type: 'matchClock'; stop: true }
+  | { type: 'matchClock'; off: true }
   | { type: 'advance'; id: number; ticks: number }
   | { type: 'save'; id: number }
+  /** A weekly challenge city's run so far (M44): its entries, the tick, the hash and score; null in any other city. */
+  | { type: 'challengeRun'; id: number }
+  /**
+   * Watch a challenge run (M44): the city, just founded from the run's challenge, takes the run's
+   * entries at their ticks as it goes and stops at its end, then says whether it came to the same hash.
+   */
+  | { type: 'watchRun'; run: WatchedRun }
+  /** Watching a run: straight to its end, as fast as the worker can (or back to the chosen speed). */
+  | { type: 'watchRush'; on: boolean }
   /** Shared city (M29): from now on the room keeps time; `player` is who this machine is. */
   | { type: 'share'; player: number; lastSeq: number }
   /** Back to single player's own clock. */
   | { type: 'unshare' }
   /** Test mode only: knock this machine's city out of step (a desync for the tests to catch). */
-  | { type: 'perturb' }
+  | { type: 'perturb'; kind?: 'id' }
+  /** What a desync's replay needs (M41): the run's start, events and hourly sums; null when not shared. */
+  | { type: 'desyncLog'; id: number }
   /** The room's events, in order, and how far the sim may now run. */
   | { type: 'stamped'; events: Stamped[]; allow: number }
   /** Join or resync a shared city from a room snapshot (answers with `ready`). */
@@ -621,6 +644,16 @@ export type WorkerToMain =
   | { type: 'snapshot'; tick: number; reason: 'snapshot' | 'autosave' | 'upload'; snapshot: SharedSnapshot }
   /** An event arrived for a tick already passed: this machine can't agree any more. */
   | { type: 'late'; tick: number; seq: number }
+  /** A watched run reached its end (M44): whether the city came to the hash and score it claimed. */
+  | { type: 'runDone'; ok: boolean; hash: string; score: number; tick: number }
   | { type: 'error'; message: string };
+
+/** A run to watch (M44): the entries at their ticks, where it ends, and the hash and score it claims. */
+export interface WatchedRun {
+  entries: RunEntry[];
+  end: number;
+  hash: string;
+  score: number;
+}
 
 export type { CommandResult };

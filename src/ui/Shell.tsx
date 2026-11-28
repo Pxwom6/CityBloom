@@ -1,3 +1,9 @@
+import { QuickMatchScreen } from './Match';
+import { isIOS } from '../client/platform';
+import { deviceMemory, tooBigFor } from '../client/memoryBudget';
+import { currentDevice } from '../client/graphicsCheck';
+import { isPhone } from '../game';
+import { ChallengeMenuButton, ChallengeScreen, weekName } from './Challenge';
 import { FriendsScreen } from './Friends';
 import { relayUrl } from '../net/multiplayer';
 import { CLIMATES, INTENSITY_NAMES, PRESET_CLIMATE, type WeatherIntensity } from '../data/climate';
@@ -11,6 +17,7 @@ import { dateOf, formatDate } from '../sim/time';
 import {
   deleteSlot,
   exportSave,
+  saveAccept,
   importSaveFile,
   listSlots,
   newSlotId,
@@ -23,6 +30,7 @@ import {
   DRAW_DISTANCES,
   POINTER_DEVICES,
   QUALITIES,
+  FPS_CAPS,
   UI_SCALE,
   type Settings,
 } from '../client/settings';
@@ -32,6 +40,10 @@ import { decodeMapFile, listMaps, newMapId, readMap, writeMap, type MapInfo } fr
 import { checkMap, type MapData } from '../sim/terrain/customMap';
 import { MapsScreen } from './Maps';
 import { WAR_SCALES, WAR_SCALE_NAMES, type WarScale } from '../data/war';
+import { reportProblem, REPORTS_NOTICE } from '../client/reports';
+import { ReportScreen } from './Report';
+import { SubmitScreen } from './Submit';
+import { LESSONS } from '../client/lessons';
 
 const NAME_A = ['Ash', 'Bram', 'Clover', 'Elm', 'Fern', 'Glen', 'Hazel', 'Juniper', 'Kestrel', 'Linden'];
 const NAME_B = ['Marsh', 'Oak', 'Pine', 'Rowan', 'Sorrel', 'Thistle', 'Willow', 'Yarrow', 'Alder', 'Birch'];
@@ -57,7 +69,65 @@ function ago(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
-const openSlot = (slot: string) => (location.href = `${location.pathname}?load=${encodeURIComponent(slot)}`);
+const goToSlot = (slot: string) => (location.href = `${location.pathname}?load=${encodeURIComponent(slot)}`);
+
+/**
+ * A city too big for this phone (M49), waiting for the player to say whether to open it anyway (the
+ * BigCityCard). A module-level signal, so any screen's Load or Continue can ask.
+ */
+let bigCity: { slot: string; name: string; population: number } | null = null;
+const bigCityListeners = new Set<() => void>();
+function askBigCity(v: typeof bigCity): void {
+  bigCity = v;
+  for (const f of bigCityListeners) f();
+}
+
+/** Open a saved city, asking first if it's too big for this phone or tablet (M49). */
+const openSlot = (slot: string, info?: { cityName: string; population: number }) => {
+  if (info && tooBigFor(info.population, currentDevice(), deviceMemory())) {
+    askBigCity({ slot, name: info.cityName, population: info.population });
+    return;
+  }
+  goToSlot(slot);
+};
+
+/** "This city is big for this phone": open it anyway, or not now (M49). */
+function BigCityCard() {
+  const [, redraw] = useState(0);
+  useEffect(() => {
+    const f = () => redraw((n) => n + 1);
+    bigCityListeners.add(f);
+    return () => void bigCityListeners.delete(f);
+  }, []);
+  const b = bigCity;
+  if (!b) return null;
+  return (
+    <div class="modal-backdrop" data-testid="big-city-card">
+      <div class="modal panel">
+        <h2>A big city for this {currentDevice() === 'tablet' ? 'tablet' : 'phone'}</h2>
+        <p>
+          {b.name} has {b.population.toLocaleString('en-US')} residents. Phones close a page that uses too
+          much memory, and a city this size may run slowly or close. Your saves are safe either way.
+        </p>
+        <div class="modal-actions">
+          <button class="btn" data-testid="big-city-cancel" onClick={() => askBigCity(null)}>
+            Not now
+          </button>
+          <button
+            class="btn active"
+            data-testid="big-city-open"
+            onClick={() => {
+              askBigCity(null);
+              goToSlot(b.slot);
+            }}
+          >
+            Open it anyway
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /** Saved cities, newest first (null while loading). */
 function useSlots(): [SlotInfo[] | null, () => void] {
@@ -73,6 +143,12 @@ function useSlots(): [SlotInfo[] | null, () => void] {
 function SlotLine({ s, city = true }: { s: SlotInfo; city?: boolean }) {
   return (
     <span class="slot-meta">
+      {/* A weekly challenge city (M44) says so, and whether its challenge is over. */}
+      {s.challenge && (
+        <span class="slot-tag" data-testid="slot-challenge">
+          {`Challenge · ${weekName(s.challenge.week)}${s.challenge.done ? ', finished' : ''} · `}
+        </span>
+      )}
       {city && `${s.cityName} · `}
       {s.population.toLocaleString('en-US')} residents · {formatDate(dateOf(s.tick))} · {ago(s.savedAt)}
     </span>
@@ -119,7 +195,11 @@ function MainMenu() {
       </div>
       <nav class="shell-nav">
         {latest && (
-          <button class="shell-btn primary" data-testid="main-continue" onClick={() => openSlot(latest.slot)}>
+          <button
+            class="shell-btn primary"
+            data-testid="main-continue"
+            onClick={() => openSlot(latest.slot, latest)}
+          >
             <span>Continue</span>
             <small>
               {latest.label !== latest.cityName && `${latest.label} · `}
@@ -143,13 +223,27 @@ function MainMenu() {
           <span>Play with friends</span>
           <small>build one city together</small>
         </button>
+        <button
+          class="shell-btn"
+          data-testid="main-match"
+          title="Two to four of you, each with a small city on the same map, against the clock"
+          onClick={() => game.openScreen('match')}
+        >
+          <span>Quick match</span>
+          <small>race friends in 15 to 30 minutes</small>
+        </button>
+        <ChallengeMenuButton />
+        <button class="shell-btn" data-testid="main-learn" onClick={() => game.openScreen('learn')}>
+          <span>Learn</span>
+          <small>short lessons, a few minutes each</small>
+        </button>
         <button class="shell-btn" data-testid="main-scenarios" onClick={() => game.openScreen('scenarios')}>
           <span>Scenarios</span>
-          <small>{SCENARIOS.length} challenges</small>
+          <small>{SCENARIOS.length} cities, each with goals to win</small>
         </button>
         <button class="shell-btn" data-testid="main-editor" onClick={() => game.openScreen('maps')}>
           <span>Map editor</span>
-          <small>make and share your own maps</small>
+          <small>{isPhone() ? 'needs a tablet or a computer' : 'make and share your own maps'}</small>
         </button>
         <button class="shell-btn" data-testid="main-load" onClick={() => game.openScreen('load')}>
           <span>Load city</span>
@@ -158,11 +252,93 @@ function MainMenu() {
         <button class="shell-btn" data-testid="main-settings" onClick={() => game.openScreen('settings')}>
           <span>Settings</span>
         </button>
+        <button class="shell-btn" data-testid="main-submit" onClick={() => game.openSubmit()}>
+          <span>Send an idea</span>
+          <small>ideas and buildings for the game</small>
+        </button>
+        <button class="shell-btn" data-testid="main-report" onClick={() => game.openScreen('report')}>
+          <span>Report a problem</span>
+        </button>
         <InstallButton />
       </nav>
+      <ReportsNotice />
       <footer class="shell-foot" data-testid="shell-foot">
         Version {GAME_VERSION} · build {BUILD_ID}
         {game.updates.offlineReady && ' · works offline'}
+      </footer>
+    </div>
+  );
+}
+
+/**
+ * The one sentence about crash reports (M41), shown the first time the main menu opens after the
+ * update that brought them (and to every new player once): what is sent, and where the switch is.
+ */
+function ReportsNotice() {
+  const game = useGame();
+  const [shown] = useState(() => !game.settings.reportsNotice);
+  const [open, setOpen] = useState(shown);
+  useEffect(() => {
+    if (shown) game.updateSettings({ reportsNotice: true });
+  }, []);
+  if (!open) return null;
+  return (
+    <p class="shell-notice" data-testid="reports-notice">
+      <span>{REPORTS_NOTICE}</span>
+      <button class="btn small" data-testid="reports-notice-ok" onClick={() => setOpen(false)}>
+        OK
+      </button>
+    </p>
+  );
+}
+
+/**
+ * Learn (M42): short lessons, each a few minutes on a small prepared town; a tick for the ones done.
+ */
+function LearnScreen() {
+  const game = useGame();
+  const done = new Set(game.settings.lessonsDone);
+  return (
+    <div class="shell-card panel learn-screen" data-testid="learn-screen">
+      <header>
+        <h2>Learn</h2>
+        <span class="muted">
+          Short lessons, each on a small town made for it. Nothing here touches your own cities.
+        </span>
+      </header>
+      <ul class="learn-list">
+        {LESSONS.map((l) => (
+          <li key={l.id} class={`learn-item ${done.has(l.id) ? 'done' : ''}`} data-testid={`lesson-${l.id}`}>
+            <div class="learn-text">
+              <b>
+                {done.has(l.id) && (
+                  <span class="learn-tick" aria-label="done">
+                    ✓{' '}
+                  </span>
+                )}
+                {l.title}
+              </b>
+              <small class="muted">
+                {l.minutes} min · {l.blurb}
+              </small>
+              {l.optIn && <small class="learn-note">{l.optIn}</small>}
+              {l.soon && <small class="learn-note">{l.soon}</small>}
+            </div>
+            <button
+              class="btn"
+              data-testid={`lesson-start-${l.id}`}
+              disabled={!!l.soon}
+              onClick={() => (location.href = `${location.pathname}?lesson=${l.id}`)}
+            >
+              {done.has(l.id) ? 'Again' : 'Start'}
+            </button>
+          </li>
+        ))}
+      </ul>
+      <footer class="shell-actions">
+        <button class="btn active" data-testid="shell-back" onClick={() => game.closeScreen()}>
+          Back
+        </button>
       </footer>
     </div>
   );
@@ -510,22 +686,40 @@ function PauseMenu() {
   const game = useGame();
   const file = useRef<HTMLInputElement>(null);
   const st = game.world.stats;
+  // A quick match's clock doesn't stop for menus (M43), and its city is kept only from the results.
+  const inMatch = game.match.active && !game.match.kept;
+  const running = !!game.net || inMatch;
   return (
     <div class="shell-card panel pause-menu" data-testid="pause-menu">
       <header>
         {/* A shared city doesn't pause for menus: it runs at the room's speed (review, minor). */}
-        <h2>{game.net ? 'Menu' : 'Paused'}</h2>
+        <h2>{running ? 'Menu' : 'Paused'}</h2>
         <span class="muted">
           {st.cityName} · {formatDate(dateOf(st.tick))}
           {game.net && ' · the city keeps running for everyone'}
+          {inMatch && ' · the match’s clock keeps running'}
         </span>
       </header>
       <nav class="shell-nav compact">
         <button class="shell-btn primary" data-testid="pause-resume" onClick={() => game.resume()}>
-          <span>{game.net ? 'Back to the city' : 'Resume'}</span>
+          <span>{running ? 'Back to the city' : 'Resume'}</span>
         </button>
-        {/* A neighbour's city seen read-only is never saved here (F5). */}
-        {!game.readOnly && (
+        {/* The tutorial left for now (M42) carries on from the step it was on. */}
+        {game.settings.tutorialStep >= 0 && game.settings.tutorialAway && (
+          <button
+            class="shell-btn"
+            data-testid="pause-tutorial"
+            onClick={() => {
+              game.continueTutorial();
+              game.resume();
+            }}
+          >
+            <span>Continue the tutorial</span>
+            <small>step {game.settings.tutorialStep + 1}</small>
+          </button>
+        )}
+        {/* A neighbour's city seen read-only is never saved here (F5); nor a match city mid-match (M43). */}
+        {!game.readOnly && !inMatch && (
           <>
             <button class="shell-btn" data-testid="pause-save" onClick={() => game.openScreen('save')}>
               <span>Save city…</span>
@@ -540,37 +734,53 @@ function PauseMenu() {
             </button>
           </>
         )}
-        <button class="shell-btn" data-testid="pause-load" onClick={() => game.openScreen('load')}>
-          <span>Load city…</span>
-        </button>
+        {!inMatch && (
+          <button class="shell-btn" data-testid="pause-load" onClick={() => game.openScreen('load')}>
+            <span>Load city…</span>
+          </button>
+        )}
         <button class="shell-btn" data-testid="pause-settings" onClick={() => game.openScreen('settings')}>
           <span>Settings</span>
         </button>
+        <button class="shell-btn quiet" data-testid="pause-submit" onClick={() => game.openSubmit()}>
+          <span>Send an idea</span>
+        </button>
+        <button class="shell-btn quiet" data-testid="pause-report" onClick={() => game.openScreen('report')}>
+          <span>Report a problem</span>
+        </button>
         {!game.net && !game.readOnly && !game.region && <InviteButtons />}
         <div class="shell-row">
-          {!game.readOnly && (
+          {!game.readOnly && !inMatch && (
             <button
               class="shell-btn"
               data-testid="pause-export"
-              onClick={async () => exportSave(await game.client.save())}
+              onClick={async () => {
+                if ((await exportSave(await game.client.save())) !== 'cancelled') game.backedUp();
+              }}
             >
               <span>Export to file</span>
             </button>
           )}
-          <button class="shell-btn" data-testid="pause-import" onClick={() => file.current?.click()}>
-            <span>Import file</span>
-          </button>
+          {!inMatch && (
+            <button class="shell-btn" data-testid="pause-import" onClick={() => file.current?.click()}>
+              <span>Import file</span>
+            </button>
+          )}
         </div>
         <button class="shell-btn quiet" data-testid="pause-quit" onClick={() => void game.quitToMenu()}>
-          <span>Quit to main menu</span>
+          <span>{inMatch ? 'Leave the match' : 'Quit to main menu'}</span>
           <small>
-            {game.readOnly
-              ? 'You were only visiting: nothing is saved.'
-              : game.net?.host
-                ? 'The room closes for everyone: it runs in this browser. Your city is autosaved first.'
-                : game.net
-                  ? 'You leave the room; the city carries on for the others. A copy is autosaved here first.'
-                  : 'Your city is autosaved first.'}
+            {inMatch
+              ? game.match.kind === 'p2p' && game.match.isHost
+                ? 'The match ends for everyone: it runs in this browser.'
+                : 'You’re out of the match; it goes on for the others.'
+              : game.readOnly
+                ? 'You were only visiting: nothing is saved.'
+                : game.net?.host
+                  ? 'The room closes for everyone: it runs in this browser. Your city is autosaved first.'
+                  : game.net
+                    ? 'You leave the room; the city carries on for the others. A copy is autosaved here first.'
+                    : 'Your city is autosaved first.'}
           </small>
         </button>
       </nav>
@@ -623,7 +833,7 @@ function ImportInput({ inputRef }: { inputRef: { current: HTMLInputElement | nul
     <input
       ref={inputRef}
       type="file"
-      accept=".citybloom,application/octet-stream,application/json"
+      accept={saveAccept(isIOS())}
       style={{ display: 'none' }}
       data-testid="import-file"
       onChange={async (e) => {
@@ -634,8 +844,9 @@ function ImportInput({ inputRef }: { inputRef: { current: HTMLInputElement | nul
           if (!s?.meta || !s.state) throw new Error('no city in it');
           const slot = newSlotId();
           await writeSlot(slot, s, `${s.meta.cityName} (imported)`);
-          openSlot(slot);
+          openSlot(slot, s.meta);
         } catch (err) {
+          reportProblem('load', err, { message: 'An imported file wouldn’t open' });
           game.toast(
             `That file isn't a readable save (${err instanceof Error ? err.message : String(err)})`,
             'bad',
@@ -775,7 +986,7 @@ function LoadScreen() {
             </>
           ) : (
             <>
-              <button class="btn active" data-testid={`load-${s.slot}`} onClick={() => openSlot(s.slot)}>
+              <button class="btn active" data-testid={`load-${s.slot}`} onClick={() => openSlot(s.slot, s)}>
                 Load
               </button>
               <button
@@ -784,7 +995,7 @@ function LoadScreen() {
                 title="Download as a .citybloom file"
                 onClick={async () => {
                   const save = await readSlot(s.slot);
-                  if (save) exportSave(save);
+                  if (save && (await exportSave(save)) !== 'cancelled') game.backedUp();
                 }}
               >
                 Export
@@ -892,8 +1103,28 @@ function SettingsScreen() {
               testid="quality"
               onChange={(quality) => set({ quality })}
             />
-            <small class="muted">Resolution, shadow detail and crowd sizes.</small>
+            <small class="muted">
+              Resolution, shadow detail and crowd sizes. Phone is the lightest: fewer trees, cars and people.
+            </small>
           </div>
+          <div class="field">
+            <span>Frame rate</span>
+            <Segmented
+              value={s.fpsCap}
+              options={FPS_CAPS}
+              label={(f) => (f === 0 ? 'Screen' : `${f} fps`)}
+              testid="fps-cap"
+              onChange={(fpsCap) => set({ fpsCap })}
+            />
+            <small class="muted">30 frames a second keeps a phone cooler and its battery longer.</small>
+          </div>
+          <Check
+            on={s.batterySaver}
+            testid="battery-saver"
+            label="Battery saver"
+            hint="at most 30 frames a second, a lower resolution, and fewer still when nothing moves"
+            set={(batterySaver) => set({ batterySaver })}
+          />
           <div class="field">
             <span>Draw distance</span>
             <Segmented
@@ -1073,6 +1304,32 @@ function SettingsScreen() {
               onChange={(autosaveMinutes) => set({ autosaveMinutes })}
             />
           </div>
+          <Check
+            on={s.crashReports}
+            testid="set-crash-reports"
+            label="Send crash reports"
+            hint="the error, the game’s version, browser and graphics; never names, cities, chat or what you type"
+            set={(crashReports) => set({ crashReports })}
+          />
+          <Check
+            on={s.timelapse}
+            testid="set-timelapse"
+            label="Record a timelapse"
+            hint="small pictures of each city as it grows, kept on this device, for a video in City history"
+            set={(timelapse) => set({ timelapse })}
+          />
+          {game.mode === 'play' && game.settings.tutorialStep >= 0 && game.settings.tutorialAway && (
+            <button
+              class="btn small"
+              data-testid="continue-tutorial"
+              onClick={() => {
+                game.continueTutorial();
+                game.resume();
+              }}
+            >
+              Continue the tutorial
+            </button>
+          )}
           {game.mode === 'play' && (
             <button
               class="btn small"
@@ -1082,7 +1339,7 @@ function SettingsScreen() {
                 game.resume();
               }}
             >
-              Start the tutorial
+              {game.settings.tutorialStep >= 0 ? 'Start the tutorial again' : 'Start the tutorial'}
             </button>
           )}
         </section>
@@ -1127,6 +1384,12 @@ export function Shell() {
       {screen === 'settings' && <SettingsScreen />}
       {screen === 'maps' && <MapsScreen />}
       {screen === 'friends' && <FriendsScreenWithLatest />}
+      {screen === 'report' && <ReportScreen />}
+      {screen === 'submit' && <SubmitScreen />}
+      {screen === 'learn' && <LearnScreen />}
+      {screen === 'match' && <QuickMatchScreen />}
+      {screen === 'challenge' && <ChallengeScreen />}
+      <BigCityCard />
     </div>
   );
 }

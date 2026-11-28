@@ -10,6 +10,8 @@ const LIVE = [
   'relay/tests/room.test.ts',
   'relay/tests/local.test.ts',
   'relay/tests/review.test.ts',
+  // A slow joiner waited for (M49): headless players on real timers, one slowed down.
+  'relay/tests/slowJoin.test.ts',
   // The war soak plays four cities against a room for minutes of room time: its links reconnect and
   // its clock is held to the wall clock while they do, and what it covers varies a little.
   'relay/tests/regionSoak.test.ts',

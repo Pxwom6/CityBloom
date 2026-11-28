@@ -315,7 +315,7 @@ export interface ModelReport {
   war: boolean;
 }
 
-const EXACT = 0.05;
+export const EXACT = 0.05;
 /** How far trim, awnings, steps and the like may overhang a wall-to-wall building's footprint. */
 const OVERHANG_FRONT = 1.6;
 const OVERHANG_SIDE = 0.75;
@@ -396,7 +396,9 @@ export function checkParsed(file: GlbFile, report: ModelReport): void {
     );
 
   if (file.images || file.textures)
-    errors.push(`has textures (${file.images} images): the spec asks for plain colours only`);
+    errors.push(
+      `has textures (${file.images} image${file.images === 1 ? '' : 's'}): the spec asks for plain colours only`,
+    );
   if (file.extensionsRequired.length)
     errors.push(`needs glTF extensions the game can't read: ${file.extensionsRequired.join(', ')}`);
   for (const n of file.notes) warnings.push(n);

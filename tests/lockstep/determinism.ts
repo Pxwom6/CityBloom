@@ -19,6 +19,9 @@ import { ATOM, atomStageNo } from '../../src/data/atom';
 import { atomOf } from '../../src/sim/systems/atom';
 import { friendOpsWaiting } from '../../src/sim/systems/regionOps';
 import { runAtomSection } from './atomSection';
+import { runMatchSection } from './matchSection';
+import { runChallengeSection } from './challengeSection';
+import { runLooksSection } from './looksSection';
 
 export interface DeterminismResult {
   months: string[];
@@ -52,6 +55,12 @@ export interface DeterminismResult {
    * hundred game hours of fallout with its rasters hashed by their bits (`atomSection.ts`).
    */
   atom: string[];
+  /** A quick match's city (M43): the fast start, then kept as an ordinary city (`matchSection.ts`). */
+  match: string[];
+  /** A weekly challenge's run (M44): played, frozen at its end and replayed (`challengeSection.ts`). */
+  challenge: string[];
+  /** Players' own buildings (M46): landmarks and looks by hash, undo, a month, a save (`looksSection.ts`). */
+  looks: string[];
   used: CommandType[];
   refused: string[];
 }
@@ -728,6 +737,14 @@ export function runDeterminism(
   // The atom bomb (M40), in a war town of its own too.
   const atom = runAtomSection(note);
 
+  // A quick match's city (M43), on a map of its own.
+  const match = runMatchSection(note);
+
+  // A weekly challenge's run (M44), recorded and replayed.
+  const challenge = runChallengeSection(note);
+  // Players' own buildings (M46).
+  const looks = runLooksSection(note);
+
   const editor = Sim.create({ editor: true }, mapFromGenerator('lockstep-map', 'lakes', 'Even Ground', true));
   editorScript((cmd) => note(cmd, editor.dispatch(cmd)));
   JSON.stringify(editor.query({ type: 'exportMap' }));
@@ -754,6 +771,9 @@ export function runDeterminism(
     live: liveLog,
     friends,
     atom,
+    match,
+    challenge,
+    looks,
     used: [...used].sort(),
     refused,
   };

@@ -7,6 +7,8 @@ import { PALETTES, buildZonedModel } from './models';
 import { buildAnnexModel, buildCivicModel, buildRubbleModel } from './civicModels';
 import { siteWorks } from './projectModels';
 import { appearance, buildHandModel, clearPlace, handmade, nearestClear, type Inset } from './handmade';
+import type { BakedModel } from '../../models/baked';
+import { REPAINTED } from '../../models/spec';
 
 /** Number of visual variants per archetype and lot size. */
 export const VARIANTS = 12;
@@ -106,6 +108,30 @@ export class AssetRegistry {
     if (!m) {
       const o = this.overrides.get(def);
       m = o ? o() : civicModel(CIVIC.get(def)!, variant % 4, q / 4, modules, stage);
+      this.cache.set(k, m);
+    }
+    return m;
+  }
+
+  /**
+   * A civic building wearing a player's own model (M46): the model on the building's site through the
+   * hand-made path (the lot base, lights and levels of detail are the game's), every colour its own.
+   */
+  civicLook(def: string, variant: number, hash: string, model: BakedModel): ModelData {
+    this.fresh();
+    const k = `look:${def}|${variant % 4}|${hash}`;
+    let m = this.cache.get(k);
+    if (!m) {
+      const d = CIVIC.get(def)!;
+      m = buildHandModel(model, {
+        W: d.w,
+        D: d.d,
+        seed: variant,
+        lit: CIVIC_LIT,
+        mirror: false,
+        base: PALETTES.pave,
+        own: REPAINTED,
+      });
       this.cache.set(k, m);
     }
     return m;

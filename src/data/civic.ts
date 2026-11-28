@@ -22,6 +22,8 @@ export type CivicCategory =
   | 'landmark'
   | 'special'
   | 'project'
+  /** A player's own landmark (M46): placed from My Buildings, never from the build menu. */
+  | 'custom'
   /** Military buildings (M34): only in cities with war on. */
   | 'military';
 
@@ -540,6 +542,35 @@ export const CIVIC_DEFS: CivicDef[] = [
     model: 'park_large',
   },
 ];
+
+/** Can a player's own model stand in for this civic building (M46)? Any but a big project. */
+export function takesLook(def: string): boolean {
+  const d = CIVIC.get(def);
+  return !!d && d.category !== 'project' && !d.project;
+}
+
+/** A model's hash as rooms, saves and the sim know it (M46). */
+export const LOOK_HASH = /^[0-9a-f]{16}$/;
+
+// A player's own landmark (M46): a decorative building of their making on 1×1 to 4×4 cells, which
+// works like a park of its size (nothing new in the economy). Placed from My Buildings with a model;
+// without one (a friend's hidden, or not arrived) it shows the plaza's generated look.
+for (const n of [1, 2, 3, 4] as const)
+  CIVIC_DEFS.push({
+    id: `landmark${n}`,
+    name: `Your landmark (${n}×${n})`,
+    category: 'custom',
+    dept: 'parks',
+    w: 8 * n,
+    d: 8 * n,
+    cost: [400, 1_500, 3_500, 6_000][n - 1]!,
+    upkeep: [10, 40, 90, 160][n - 1]!,
+    service: { kind: 'park', range: [10, 16, 20, 26][n - 1]! },
+    landValue: { radius: [70, 110, 140, 180][n - 1]!, value: [0.08, 0.12, 0.14, 0.16][n - 1]! },
+    blurb: 'Your own building: a decorative landmark that works like a park of its size.',
+    unlockPopulation: 0,
+    model: 'plaza',
+  });
 
 CIVIC_DEFS.push({
   id: 'busdepot',

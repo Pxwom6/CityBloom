@@ -1,3 +1,4 @@
+import type { RunEntry } from '../sim/runReplay';
 import type { Command, CommandResult } from '../sim/commands';
 import type {
   FrameDiff,
@@ -5,6 +6,7 @@ import type {
   Query,
   SharedSnapshot,
   Snapshot,
+  WatchedRun,
   WorkerPerf,
   WorkerToMain,
 } from '../sim/protocol';
@@ -14,6 +16,7 @@ import type { SaveFile } from '../sim/save';
 import type { GameOptions } from '../sim/state';
 import type { MapData } from '../sim/terrain/customMap';
 import type { Speed } from '../sim/time';
+import type { DesyncLogData } from '../sim/desyncLog';
 
 type FrameListener = (diff: FrameDiff, perf: WorkerPerf, speed: Speed) => void;
 /** What a shared city's worker reports (M29): applied events, checksums, snapshots, late events. */
@@ -38,6 +41,8 @@ export class SimClient implements SimDriver {
   /** Test builds pass test mode on to every city the worker opens. */
   testMode = false;
   onError: (message: string) => void = (m) => console.error(`[sim] ${m}`);
+  /** A watched challenge run reached its end (M44). */
+  onRunDone: ((r: { ok: boolean; hash: string; score: number; tick: number }) => void) | null = null;
 
   constructor() {
     this.worker = new Worker(new URL('../sim/worker.ts', import.meta.url), { type: 'module' });
@@ -68,6 +73,9 @@ export class SimClient implements SimDriver {
       }
       case 'error':
         this.onError(msg.message);
+        break;
+      case 'runDone':
+        this.onRunDone?.(msg);
         break;
       case 'applied':
       case 'checksum':
@@ -130,6 +138,14 @@ export class SimClient implements SimDriver {
     return this.request((id) => ({ type: 'query', id, q }));
   }
 
+  /** A quick match's clock (M43): see the worker's `matchClock`. */
+  matchClock(clock: { startIn: number; endTick: number } | 'stop' | 'off'): void {
+    this.post({
+      type: 'matchClock',
+      ...(clock === 'stop' ? { stop: true as const } : clock === 'off' ? { off: true as const } : clock),
+    });
+  }
+
   setSpeed(speed: Speed): void {
     this.post({ type: 'setSpeed', speed });
   }
@@ -142,14 +158,43 @@ export class SimClient implements SimDriver {
     return this.request((id) => ({ type: 'save', id }));
   }
 
+  /**
+   * A weekly challenge city's run (M44), or null in any other city: as it stood when the challenge
+   * ended (`final`), or so far.
+   */
+  challengeRun(): Promise<{
+    entries: RunEntry[];
+    end: number;
+    hash: string;
+    score: number;
+    final: boolean;
+  } | null> {
+    return this.request((id) => ({ type: 'challengeRun', id }));
+  }
+
+  /** Watch a challenge run in the city just founded from its challenge (M44). */
+  watchRun(run: WatchedRun): void {
+    this.post({ type: 'watchRun', run });
+  }
+
+  /** Watching a run: straight to its end, or back to the chosen speed. */
+  watchRush(on: boolean): void {
+    this.post({ type: 'watchRush', on });
+  }
+
   /** Shared city (M29): hand the clock to the room; this machine is `player`. */
   share(player: number, lastSeq: number): void {
     this.post({ type: 'share', player, lastSeq });
   }
 
   /** Test builds: knock this machine's city out of step. */
-  perturb(): void {
-    this.post({ type: 'perturb' });
+  /** What a desync's replay needs (M41), asked before a catching-up snapshot replaces it. */
+  desyncLog(): Promise<DesyncLogData | null> {
+    return this.request((id) => ({ type: 'desyncLog', id }));
+  }
+
+  perturb(kind?: 'id'): void {
+    this.post({ type: 'perturb', ...(kind ? { kind } : {}) });
   }
 
   unshare(): void {

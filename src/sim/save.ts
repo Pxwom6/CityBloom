@@ -1,3 +1,4 @@
+import type { RunEntry } from './runReplay';
 import { emptyChronicle } from './systems/chronicle';
 import { emptyTotals } from './systems/totals';
 import { newElectionState } from './systems/elections';
@@ -7,6 +8,7 @@ import { Rng } from './rng';
 import { initialWeather, seasonsGrace } from './systems/weather';
 import { initialRegion } from './systems/region';
 import { GAME_TITLE } from '../config';
+import { LOOK_HASH } from '../data/civic';
 import { canonicalStringify, decodeValue, encodeValue } from './serialize';
 import { legacyStreetNames } from './world/legacyStreetNames';
 import type { SimState } from './state';
@@ -14,7 +16,7 @@ import { rivalAllies } from './systems/war';
 import type { Personality } from '../data/war';
 
 /** Bump when the saved state shape changes, and add a migration from the previous version. */
-export const SAVE_VERSION = 32;
+export const SAVE_VERSION = 34;
 export const SAVE_FORMAT = 'citybloom-save';
 
 export interface SaveMeta {
@@ -28,6 +30,35 @@ export interface SaveMeta {
    * the sim: the city rejoins it when this save is opened again. Older saves have none.
    */
   region?: RegionBinding;
+  /**
+   * A weekly challenge city's run so far (M44): every command and save point since it was founded,
+   * kept beside the city by the worker so a challenge picked up again from a save can still be posted
+   * (and replayed). Older saves, and every other city's, have none.
+   */
+  run?: { entries: RunEntry[]; final?: RunFinal };
+  /**
+   * The city's timelapse (M45): the key its frames are kept under on this device, written by the page
+   * beside the city (never the sim's state). Older saves have none: their recording starts when opened.
+   */
+  timelapse?: string;
+  /**
+   * The players' own models its buildings wear (M46), written by the page beside the city so it opens
+   * anywhere with them: each checked again when the city opens. Older saves have none.
+   */
+  models?: { hash: string; name: string; target: unknown; glb: string }[];
+  /** A weekly challenge city (M44): its week, and whether the challenge has ended (the load list's mark). */
+  challenge?: { week: number; done: boolean };
+}
+
+/**
+ * A challenge run as it stood when the challenge ended (M44): how many of the entries it had, the
+ * tick, and the city's hash and score there. Playing on afterwards adds entries, never changes these.
+ */
+export interface RunFinal {
+  count: number;
+  end: number;
+  hash: string;
+  score: number;
 }
 
 /** A city's place in a shared region: the region's invite (its key too, for one in a browser), its slot. */
@@ -286,6 +317,13 @@ export const migrations: Record<number, (state: Record<string, unknown>) => Reco
   // (`WarState.atom`, and with later steps the fallout, the nuclear winters, a pariah's mark and a
   // computer neighbour's race, appear when first used), so nothing changes but the version.
   31: (s) => s,
+  // v32 → v33 (M44): the weekly challenge. A city saved before it isn't a challenge city
+  // (`GameOptions.challenge` and the challenge's parts of `ScenarioState` appear only in one), so
+  // nothing changes but the version.
+  32: (s) => s,
+  // v33 → v34 (M46): players' own models for civic buildings (a civic’s optional `look`). An older city
+  // has none: every building wears the game's own look.
+  33: (s) => s,
 };
 
 export function encodeState(state: SimState): unknown {
@@ -325,6 +363,10 @@ function repairState(state: SimState): void {
   const totals = state.totals as unknown as Record<string, unknown>;
   for (const [k, v] of Object.entries(emptyTotals())) if (totals[k] === undefined) totals[k] = v;
   state.tourism.by ??= { road: 0, rail: 0, air: 0, sea: 0 };
+  // A player's own model is named by a hash (M46): anything else a hand-edited or hostile save carries
+  // is dropped, so no page asks a room for a name it would refuse (every player loads the same save).
+  for (const c of state.civics.values())
+    if (c.look !== undefined && !(typeof c.look === 'string' && LOOK_HASH.test(c.look))) delete c.look;
 }
 
 export function stateToCanonicalJson(state: SimState): string {

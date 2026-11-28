@@ -17,6 +17,8 @@ import type { Stamped } from '../src/sim/lockstep';
 import {
   MAX_PLAYERS,
   PROTOCOL_VERSION,
+  MODEL_LIMITS,
+  type ModelPartMsg,
   makeSecret,
   parseClientMsg,
   type ClientMsg,
@@ -145,6 +147,11 @@ interface Player {
   tick: number;
   visible: boolean;
   joining: boolean;
+  /**
+   * Until when the city waits for this player catching up after a snapshot (ms, the room's clock; 0:
+   * not waited for), M49: a slow phone joining a busy city fell behind for good.
+   */
+  holdUntil: number;
   conn: Conn | null;
 }
 
@@ -155,6 +162,9 @@ interface ConnState {
   cmds: TokenBucket;
   ctl: TokenBucket;
   chat: TokenBucket;
+  /** Players' own models (M46): asks for one, and base64 characters of them sent. */
+  asks: TokenBucket;
+  modelChars: TokenBucket;
   /** Order of opening, to drop the oldest silent socket when full. */
   n: number;
 }
@@ -171,6 +181,12 @@ interface Incoming {
 export const MAX_CLOCK_STEP = 30 * 60;
 /** A joining player is in step once within this many ticks of the frontier (the city keeps moving). */
 const CAUGHT_UP = 120;
+/**
+ * How long the city waits for a player catching up after loading its snapshot (ms, M49): the pacer
+ * keeps time within its lead of them, as for anyone in step. Past it, the city carries on and they
+ * catch up as before (a page that can't, a tab put away, never holds a room up for longer).
+ */
+export const JOIN_HOLD = 30_000;
 /** How long to wait for the pacer's snapshot before falling back to the stored one (ms). */
 const SETTLE_WAIT = 8_000;
 /** Checksums kept for comparing (game hours). */
@@ -196,6 +212,17 @@ export class Room {
   info: RoomInfo;
   private players = new Map<number, Player>();
   private conns = new Map<Conn, ConnState>();
+  /**
+   * Players' own models being passed on (M46), by hash: who waits for each, the one player whose
+   * parts are relayed (the first to answer) and when it was asked for. Only in memory: a room
+   * that sleeps forgets, and a page asks again.
+   */
+  private models = new Map<
+    string,
+    { waiting: Set<number>; from: number | null; at: number; not: Set<number> }
+  >();
+  /** What the whole room passes on of players' models (M46), whoever sends it. */
+  private modelRoom: TokenBucket | null = null;
   private nextPlayer = 1;
   private seq = -1;
   allowed = 0;
@@ -290,7 +317,7 @@ export class Room {
       muted: meta.info.muted ?? [],
     };
     for (const p of meta.players)
-      this.players.set(p.id, { ...p, visible: false, joining: false, conn: null });
+      this.players.set(p.id, { ...p, visible: false, joining: false, holdUntil: 0, conn: null });
     this.nextPlayer = meta.nextPlayer;
     this.allowed = meta.allowed;
     this.kicked = new Set(meta.kicked);
@@ -323,6 +350,8 @@ export class Room {
       cmds: new TokenBucket(l.cmdRate, l.cmdBurst, now),
       ctl: new TokenBucket(l.ctlRate, l.ctlBurst, now),
       chat: new TokenBucket(1, 3, now),
+      asks: new TokenBucket(MODEL_LIMITS.asksPerMinute / 60, 10, now),
+      modelChars: new TokenBucket(MODEL_LIMITS.charsPerMinute / 60, MODEL_LIMITS.charsPerMinute / 2, now),
       n: ++this.opened,
     };
   }
@@ -461,6 +490,7 @@ export class Room {
     p.conn = null;
     this.waiting.delete(p.id);
     if (this.incoming?.from === p.id) this.incoming = null;
+    this.forgetModels(p.id);
     this.choosePacer();
     this.broadcastPlayers();
     this.broadcastRoom();
@@ -485,6 +515,7 @@ export class Room {
     const msg = parseClientMsg(raw);
     if (!msg) return this.reject(conn, 'bad-message', 'A message the room could not read');
     this.checkStall(now);
+    this.checkHolds(now);
     if (msg.t === 'hello') return this.hello(conn, msg);
     const p = st.player ? this.players.get(st.player) : null;
     if (!p) return this.reject(conn, 'bad-message', 'Say hello first');
@@ -584,6 +615,7 @@ export class Room {
       tick: this.allowed,
       visible: true,
       joining: false,
+      holdUntil: 0,
       conn,
     };
     this.players.set(p.id, p);
@@ -644,6 +676,7 @@ export class Room {
         if (moved) this.broadcast({ t: 'ticks', ticks: [[p.id, p.tick]] }, p.id);
         if (p.joining && !this.waiting.has(p.id) && m.tick >= this.allowed - CAUGHT_UP) {
           p.joining = false;
+          p.holdUntil = 0;
           this.choosePacer();
           this.broadcastPlayers();
         }
@@ -689,6 +722,9 @@ export class Room {
         // Lists set before the roles of war (M39) keep the roles they were read as allowing.
         if (m.player !== undefined && m.perms) setPerms(r, m.player, m.perms);
         if (m.spendLimit !== undefined) r.spendLimit = m.spendLimit;
+        // Players' own buildings (M46): absent means on, so rooms made before keep them.
+        if (m.customBuildings === true) delete r.customBuildings;
+        else if (m.customBuildings === false) r.customBuildings = false;
         if (JSON.stringify(r) === before) return;
         // Every game applies the same rules at the same tick: the sim checks what the room can't.
         this.order({ kind: 'rules', rules: JSON.parse(JSON.stringify(r)) as SharedRules });
@@ -704,6 +740,10 @@ export class Room {
       case 'ping':
         this.broadcast({ t: 'ping', from: p.id, at: m.at }, p.id);
         return;
+      case 'mneed':
+        return this.needModel(p.id, m.hash, st, now, m.not);
+      case 'mpart':
+        return this.modelPart(p.id, m, st, now);
       case 'chat':
         if (!this.info.chat || this.info.muted.includes(p.id) || !st.chat.take(now)) return;
         this.broadcast({ t: 'chat', from: p.id, text: m.text });
@@ -794,11 +834,80 @@ export class Room {
     for (const p of this.players.values()) if (p.conn && !this.waiting.has(p.id)) p.conn.send(msg);
   }
 
+  /**
+   * A page lacks a model (M46): the others are asked once (a page that has it answers), unless the
+   * room is already waiting for it. With custom buildings off, nobody is asked.
+   */
+  private needModel(player: number, hash: string, st: ConnState, now: number, not?: number[]): void {
+    if (this.info.rules.customBuildings === false || !st.asks.take(now)) return;
+    // Forget what went quiet: an ask nobody answered, or a transfer that stopped, for half a minute
+    // (whoever had it left, a page dropped it, or a player asked for models nobody has).
+    for (const [h, x] of this.models) if (now - x.at > MODEL_LIMITS.staleMs) this.models.delete(h);
+    const w = this.models.get(hash);
+    // A page that found an answer wrong asks again without that player: the transfer starts afresh.
+    if (w && not?.length) {
+      for (const id of not) w.not.add(id);
+      if (w.from !== null && w.not.has(w.from)) {
+        w.from = null;
+        w.at = now;
+        this.broadcast({ t: 'mneed', from: player, hash }, player);
+      }
+    }
+    if (w) {
+      w.waiting.add(player);
+      return;
+    }
+    let mine = 0;
+    for (const x of this.models.values()) if (x.waiting.has(player)) mine++;
+    if (this.models.size >= MODEL_LIMITS.waiting || mine >= MODEL_LIMITS.waitingEach) return;
+    this.models.set(hash, { waiting: new Set([player]), from: null, at: now, not: new Set(not ?? []) });
+    this.broadcast({ t: 'mneed', from: player, hash }, player);
+  }
+
+  /** A part of a model someone asked for: passed to them from the first player to answer, never kept. */
+  private modelPart(player: number, m: ModelPartMsg, st: ConnState, now: number): void {
+    const w = this.models.get(m.hash);
+    if (!w || w.waiting.has(player) || w.not.has(player)) return;
+    // Custom buildings turned off mid-transfer: nothing more is passed on.
+    if (this.info.rules.customBuildings === false) {
+      this.models.delete(m.hash);
+      return;
+    }
+    if (w.from === null) {
+      if (m.part !== 0) return;
+      w.from = player;
+    }
+    if (w.from !== player) return;
+    this.modelRoom ??= new TokenBucket(
+      MODEL_LIMITS.roomCharsPerMinute / 60,
+      MODEL_LIMITS.roomCharsPerMinute / 2,
+      now,
+    );
+    if (!st.modelChars.takeMany(now, m.data.length) || !this.modelRoom.takeMany(now, m.data.length)) {
+      // Over this player's share: the transfer stops, and an ask later starts it again.
+      this.models.delete(m.hash);
+      return;
+    }
+    w.at = now;
+    const out: RoomMsg = { ...m, from: player };
+    for (const id of w.waiting) this.players.get(id)?.conn?.send(out);
+    if (m.part === m.parts - 1) this.models.delete(m.hash);
+  }
+
+  /** A player gone: off every list it waits on, and what it was sending can be asked for again. */
+  private forgetModels(player: number): void {
+    for (const [hash, w] of this.models) {
+      w.waiting.delete(player);
+      if (!w.waiting.size || w.from === player) this.models.delete(hash);
+    }
+  }
+
   private broadcast(msg: RoomMsg, except = 0): void {
     for (const p of this.players.values()) if (p.conn && p.id !== except) p.conn.send(msg);
   }
 
   private playerList(): PlayerInfo[] {
+    const now = this.env.now();
     return [...this.players.values()].map((p) => ({
       id: p.id,
       name: p.name,
@@ -808,6 +917,8 @@ export class Room {
       tick: p.tick,
       visible: p.visible,
       joining: p.joining,
+      // Catching up with its city loaded, and waited for (M49).
+      ...(p.joining && p.holdUntil > now && !this.waiting.has(p.id) ? { catchUp: true } : {}),
     }));
   }
 
@@ -892,6 +1003,20 @@ export class Room {
     s.parts.forEach((data, part) => p.conn!.send({ t: 'snap', meta: s.meta, part, data, reason }));
     p.conn.send({ t: 'ev', list: this.events.filter((e) => e.seq > s.meta.seq), allow: this.allowed });
     p.joining = true;
+    // The city waits a while for them to catch up (M49); everyone hears so (the pacer counts them).
+    p.holdUntil = this.env.now() + JOIN_HOLD;
+    this.broadcastPlayers();
+  }
+
+  /** A player waited for too long: the city carries on without waiting (M49). */
+  private checkHolds(now: number): void {
+    let changed = false;
+    for (const p of this.players.values())
+      if (p.holdUntil && (now > p.holdUntil || !p.joining || !p.conn)) {
+        p.holdUntil = 0;
+        changed = true;
+      }
+    if (changed) this.broadcastPlayers();
   }
 
   private snapPart(p: Player, m: Extract<ClientMsg, { t: 'snap' }>): void {
@@ -967,7 +1092,21 @@ export class Room {
       if (id === this.info.pacer || s === ref) continue;
       const q = this.players.get(id);
       if (!q?.conn || this.waiting.has(id) || q.joining) continue;
-      this.broadcast({ t: 'resync', player: id, text: `${q.name}'s game fell out of step; catching up` });
+      // Both sides' recent sums go with it, for the desync reports the two pages file (M41).
+      const sums: [number, string, string][] = [];
+      for (const [t, m] of this.sums) {
+        const a = m.get(this.info.pacer);
+        const b = m.get(id);
+        if (a !== undefined && b !== undefined && t <= tick) sums.push([t, a, b]);
+      }
+      this.broadcast({
+        t: 'resync',
+        player: id,
+        text: `${q.name}'s game fell out of step; catching up`,
+        tick,
+        pacer: this.info.pacer,
+        sums,
+      });
       q.joining = true;
       this.serveSnapshot(q, 'resync');
       this.broadcastPlayers();

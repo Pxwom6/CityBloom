@@ -120,8 +120,8 @@ function spawnDemand(sim: Sim, zone: ZoneCode, wealth: Wealth): number {
 export function maxConstructions(sim: Sim): number {
   const n =
     GROWTH.baseConstructions + Math.ceil(sim.state.totals.population * GROWTH.constructionsPerPopulation);
-  // Prefab panels (M37's Field workshops) put more up at once.
-  return Math.floor(n * spinoff(sim, 'prefab'));
+  // Prefab panels (M37's Field workshops) put more up at once; so does a quick match (M43).
+  return Math.floor(n * spinoff(sim, 'prefab') * sim.growthPace());
 }
 
 export function createBuilding(sim: Sim, block: ZoneBlock, col: number, def: ZonedDef): Building {
@@ -191,11 +191,12 @@ export function createBuilding(sim: Sim, block: ZoneBlock, col: number, def: Zon
 export function growthPass(sim: Sim): void {
   const s = sim.state;
   const dt = GROWTH.passInterval;
+  const pace = sim.growthPace();
   let constructing = 0;
   for (const b of s.buildings.values()) {
     if (b.state !== BState.Construction) continue;
     const def = ZONED_DEFS.get(b.def)!;
-    b.progress = Math.min(1, b.progress + dt / def.buildTicks);
+    b.progress = Math.min(1, b.progress + (dt * pace) / def.buildTicks);
     if (b.progress >= 1) {
       b.state = BState.Active;
       b.progress = 1;
@@ -211,7 +212,7 @@ export function growthPass(sim: Sim): void {
     const target = Math.round(b.cap * Math.max(0, Math.min(1, 0.3 + b.happiness)));
     if (b.pop < target && s.demand.R > GROWTH.moveInMinDemand && sim.isBuildingConnected(b)) {
       const before = b.pop;
-      b.pop = Math.min(target, b.pop + Math.max(1, Math.ceil(b.cap * GROWTH.moveIn)));
+      b.pop = Math.min(target, b.pop + Math.max(1, Math.ceil(b.cap * Math.min(1, GROWTH.moveIn * pace))));
       welcome(b, before);
     } else if (b.pop > target) {
       b.pop = Math.max(target, b.pop - Math.max(1, Math.ceil(b.cap * GROWTH.moveOut)));
@@ -264,7 +265,8 @@ export function growthPass(sim: Sim): void {
       }
       if (!def) continue;
       if (fallout && lotClosed(sim, block, c, def.w)) continue;
-      if (!sim.rng.growth.chance(GROWTH.spawnChance * Math.min(1, demand))) continue;
+      if (!sim.rng.growth.chance(Math.min(1, GROWTH.spawnChance * sim.growthPace()) * Math.min(1, demand)))
+        continue;
       createBuilding(sim, block, c, def);
       budget--;
       c += def.w - 1;
@@ -341,7 +343,7 @@ export function lifecycle(sim: Sim): void {
     // Only grow when the city wants more of this zone.
     const zoneDemand = b.zone === ZONE_R ? s.demand.R : b.zone === ZONE_I ? s.demand.I : s.demand.C;
     if (zoneDemand <= 0) continue;
-    if (!sim.rng.growth.chance(GROWTH.upgradeChance)) continue;
+    if (!sim.rng.growth.chance(Math.min(1, GROWTH.upgradeChance * sim.growthPace()))) continue;
     const block = s.net.blocks.get(b.block);
     const seg = block ? s.net.segments.get(block.seg) : undefined;
     if (!block || !seg) continue;

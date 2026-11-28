@@ -32,7 +32,7 @@ export type BattleJobReply =
   | { type: 'progress'; id: number; population: number; months: number }
   | { type: 'away'; id: number; input: BattleInput; result: AwayResult; town: SaveFile | null }
   | { type: 'town'; id: number; town: SaveFile }
-  | { type: 'error'; id: number; message: string }
+  | { type: 'error'; id: number; message: string; stack?: string }
   /** A live battle's picture now, and how it ended. */
   | { type: 'liveFrame'; id: number; step: number; frame: BattleFrame }
   | { type: 'liveDone'; id: number; end: LiveEnd };
@@ -65,7 +65,12 @@ function pumpLive(id: number): void {
   } catch (err) {
     clearInterval(l.timer);
     lives.delete(id);
-    post({ type: 'error', id, message: err instanceof Error ? err.message : String(err) });
+    post({
+      type: 'error',
+      id,
+      message: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+    });
   }
 }
 
@@ -113,6 +118,11 @@ self.onmessage = (ev: MessageEvent<BattleJob>) => {
       town: job.town ? null : town.save(),
     });
   } catch (err) {
-    post({ type: 'error', id: job.id, message: err instanceof Error ? err.message : String(err) });
+    post({
+      type: 'error',
+      id: job.id,
+      message: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+    });
   }
 };

@@ -98,9 +98,26 @@ describe('a room (M30), with headless players', () => {
 
     // Kit's game goes wrong (as a buggy machine might): the next hourly checksum catches it and the
     // room sends Kit a fresh snapshot; everyone is told.
+    // The room's word carries what the two pages' desync reports need (M41).
+    const heard: { kit?: unknown; host?: unknown } = {};
+    kit.session.onResync = (m) => (heard.kit = m);
+    host.session.onResync = (m) => (heard.host = m);
     kit.driver.sim.state.treasury += 1;
     host.session.setSpeed(3);
     await until(() => kit.notices.some((n) => /fell out of step/.test(n.text)), 30_000, 'the desync');
+    const word = heard.kit as {
+      player: number;
+      tick: number;
+      pacer: number;
+      sums: [number, string, string][];
+    };
+    expect(word.player).toBe(kit.session.you);
+    expect(word.pacer).toBe(host.session.you);
+    expect(word.sums.length).toBeGreaterThan(0);
+    const [lastTick, pacerSum, kitSum] = word.sums.at(-1)!;
+    expect(lastTick).toBe(word.tick);
+    expect(pacerSum).not.toBe(kitSum);
+    expect(heard.host).toEqual(heard.kit);
     expect(host.notices.some((n) => n.text === "Kit's game fell out of step; catching up")).toBe(true);
     await until(() => host.driver.tick > t + TICKS_PER_MONTH, 60_000, 'a month more');
     t = await settle(host, [host, sam, kit]);

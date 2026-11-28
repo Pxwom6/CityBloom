@@ -15,7 +15,7 @@ import { SABOTAGE_TARGETS, SPY_OPS } from '../data/intel';
 import type { Vec2 } from './geom';
 import type { DisasterKind } from './systems/disasters';
 import { BUILDABLE_ROADS } from '../data/roads';
-import { CIVIC } from '../data/civic';
+import { CIVIC, LOOK_HASH } from '../data/civic';
 import { DEPTS, LOAN_OPTIONS } from '../data/economy';
 import { PROMISES } from '../data/elections';
 import { POLICY } from '../data/policies';
@@ -53,6 +53,8 @@ export const PAGE_ONLY: ReadonlySet<CommandType> = new Set<CommandType>([
   'missionResult',
   'opResolve',
   'warClock',
+  // A quick match's city kept as an ordinary save (M43).
+  'endMatch',
   // Wars and treaties between friends (M39): the same.
   'friendWar',
   'friendTreaty',
@@ -206,8 +208,21 @@ const CHECKS: Record<CommandType, Check> = {
     isCoord(c.x) &&
     isCoord(c.z) &&
     isNum(c.angle, -ANGLE, ANGLE) &&
-    oneOf(c.side, [1, -1] as const)
-      ? { type: 'placeBuilding', def: c.def, x: c.x, z: c.z, angle: c.angle, side: c.side }
+    oneOf(c.side, [1, -1] as const) &&
+    (c.look === undefined || (typeof c.look === 'string' && LOOK_HASH.test(c.look)))
+      ? {
+          type: 'placeBuilding',
+          def: c.def,
+          x: c.x,
+          z: c.z,
+          angle: c.angle,
+          side: c.side,
+          ...(typeof c.look === 'string' ? { look: c.look } : {}),
+        }
+      : BAD,
+  setLook: (c) =>
+    isInt(c.civic) && (c.look === null || (typeof c.look === 'string' && LOOK_HASH.test(c.look)))
+      ? { type: 'setLook', civic: c.civic, look: c.look }
       : BAD,
   // `size` and `heading` are for tests and never come from a player's tools: they're left out.
   disaster: (c) => {
@@ -365,6 +380,7 @@ const CHECKS: Record<CommandType, Check> = {
   missionResult: () => 'Only your own game hears from the region',
   opResolve: () => 'Only your own game hears from the region',
   warClock: () => 'Only your own game hears from the region',
+  endMatch: () => 'Only your own game keeps its match city',
   friendWar: () => 'Only your own game hears from the region',
   friendTreaty: () => 'Only your own game hears from the region',
   friendPacts: () => 'Only your own game hears from the region',

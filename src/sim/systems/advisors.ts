@@ -4,7 +4,7 @@ import { WEATHER } from '../../data/climate';
 import { GARBAGE, UTILITIES } from '../../data/civic';
 import { ZONE_I, ZONE_NONE, ZONE_R } from '../../data/zones';
 import { GRID_CELL, GRID_RES } from '../../data/world';
-import { EDUCATION, LONG_COMMUTE, TRAM } from '../../data/balance';
+import { EDUCATION, GROWTH, LONG_COMMUTE, TRAM } from '../../data/balance';
 import { TICKS_PER_MONTH } from '../time';
 import { railTerminals } from './rail';
 import { railLinkOffered } from '../actions/railLink';
@@ -41,9 +41,34 @@ export interface Advice {
   map?: string;
   /** Roads it's about, most telling first (P1: a cut-off stretch); the panel names them. */
   segs?: number[];
+  /**
+   * Homes about to empty (M42): what's driving them out, and the game hours until the first goes, so
+   * the page can warn once, plainly, before it happens.
+   */
+  emptying?: { why: 'utility' | 'services'; hours: number };
 }
 
 const money = (n: number) => `$${formatInt(Math.abs(n))}`;
+
+/** Game hours until a building in decline empties (distress climbs by 2 an hour when cut off, else 1). */
+function hoursToEmpty(sim: Sim, b: Building): number {
+  return Math.max(0, Math.ceil((GROWTH.abandonAt - b.distress) / (sim.isBuildingConnected(b) ? 1 : 2)));
+}
+
+/** Hours as a player reads them: "in about 20 hours", "in about a day", "in about 2 days". */
+function inHours(h: number): string {
+  if (h <= 1) return 'within the hour';
+  if (h < 20) return `in about ${formatInt(h)} hours`;
+  if (h < 36) return 'in about a day';
+  return `in about ${formatInt(Math.round(h / 24))} days`;
+}
+
+/** "a, b or c". */
+function orList(names: readonly string[]): string {
+  return names.length < 2
+    ? (names[0] ?? '')
+    : `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}`;
+}
 const plural = (n: number, one: string, many = `${one}s`) => `${formatInt(n)} ${n === 1 ? one : many}`;
 
 function active(sim: Sim): Building[] {
@@ -194,15 +219,23 @@ export function advise(sim: Sim): Advice[] {
       .sort((a, b) => a.id - b.id)[0];
     // (Neighbours sell power and water, never sewage; a city with none has no one to buy from.)
     const buy = u !== 'sewage' && s.region.neighbours.length > 0;
+    // Homes without power or water empty after about two days (M42: say how long is left, plainly).
+    const dark = u !== 'sewage' ? without.filter((b) => b.zone === ZONE_R && b.pop > 0) : [];
+    const soonest = dark.length ? Math.min(...dark.map((b) => hoursToEmpty(sim, b))) : null;
+    const when =
+      soonest === null
+        ? 'They’ll close or empty within a day or two.'
+        : `Homes without ${u} empty after about two days: the first will start to empty ${inHours(soonest)}.`;
     out.push({
       advisor: 'utilities',
-      severity: share > 0.2 ? 3 : 2,
+      severity: share > 0.2 || (soonest !== null && soonest <= 12) ? 3 : 2,
       title: `${plural(without.length, 'building')} without ${u}`,
       text: down
-        ? `The ${civicDef(down).name.toLowerCase()} is ${down.flooded ? 'under water' : `being repaired (${down.damage} h left)`}. Until then ${buy ? `buy ${u} from a neighbour (Region panel, Shift+N) or ` : ''}build ${fix}: these buildings close or empty within a day or two.`
-        : `Build ${fix} or connect these buildings to one by road. They'll close or empty within a day or two.`,
-      at: centre(without.slice(0, 20)),
+        ? `The ${civicDef(down).name.toLowerCase()} is ${down.flooded ? 'under water' : `being repaired (${down.damage} h left)`}. Until then ${buy ? `buy ${u} from a neighbour (Region panel, Shift+N) or ` : ''}build ${fix}. ${when}`
+        : `Build ${fix} or connect these buildings to one by road. ${when}`,
+      at: centre((dark.length ? dark : without).slice(0, 20)),
       map: u,
+      ...(soonest !== null ? { emptying: { why: 'utility' as const, hours: soonest } } : {}),
     });
   }
   const dirty = list
@@ -614,6 +647,34 @@ export function advise(sim: Sim): Advice[] {
       at: centre(abandoned.slice(0, 10) as Building[]),
       map: 'happiness',
     });
+  // A town without services slowly shrinks (M42): homes unhappy for want of them say so plainly, with
+  // the first service to build and how long until homes start to empty.
+  const missing = (
+    [
+      ['fire', 'a fire station'],
+      ['health', 'a clinic'],
+      ['police', 'a police station'],
+      ['education', 'a school'],
+    ] as const
+  ).filter(([cat]) => ![...s.civics.values()].some((c) => civicDef(c).category === cat && civicOnline(c)));
+  const declining = homes.filter(
+    (b) => b.distress > 0 && b.happiness < GROWTH.distressHappiness && b.power >= 0.5 && b.water >= 0.5,
+  );
+  if (pop >= 150 && missing.length && declining.length) {
+    const soonest = Math.min(...declining.map((b) => hoursToEmpty(sim, b)));
+    const names = missing.map(([, n]) => n);
+    out.push({
+      advisor: 'planning',
+      severity: soonest <= 24 ? 3 : 2,
+      title: 'The town will shrink without services',
+      text:
+        `${plural(declining.length, 'home')} ${declining.length === 1 ? 'is' : 'are'} unhappy: the town has no ${orList(names)} yet. ` +
+        `Build ${names[0]} first. Unhappy homes start to empty ${inHours(soonest)}.`,
+      at: centre(declining.slice(0, 20)),
+      map: 'happiness',
+      emptying: { why: 'services', hours: soonest },
+    });
+  }
   // Districts (M21): a bigger town can give its parts rules of their own.
   if (pop >= 5_000 && !s.districts.size)
     out.push({

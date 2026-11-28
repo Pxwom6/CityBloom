@@ -37,6 +37,7 @@ const SAMPLES: Record<CommandType, Command> = {
   promise: { type: 'promise', promise: 'crime', on: true },
   repayLoan: { type: 'repayLoan', id: 1 },
   placeBuilding: { type: 'placeBuilding', def: 'firestation', x: 300, z: 330, angle: 0, side: 1 },
+  setLook: { type: 'setLook', civic: 7, look: '0123456789abcdef' },
   disaster: { type: 'disaster', kind: 'tornado', at: P(900, 900) },
   setDisasters: { type: 'setDisasters', on: false },
   setWeather: { type: 'setWeather', seasons: true, intensity: 2 },
@@ -140,6 +141,7 @@ const SAMPLES: Record<CommandType, Command> = {
     late: false,
   },
   warClock: { type: 'warClock', cap: 120 },
+  endMatch: { type: 'endMatch' },
   // M39, wars and treaties with friends (page only).
   friendWar: {
     type: 'friendWar',

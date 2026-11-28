@@ -1,24 +1,19 @@
 # PROGRESS
 
-## Needed from the owner: Cloudflare for online rooms
-Online rooms (phase 4) run on Cloudflare's free plan. Until these exist the site builds with online
-rooms switched off ("Online rooms aren't set up yet") and peer-to-peer still works.
-1. A free Cloudflare account (https://dash.cloudflare.com/sign-up). In Workers & Pages, open the
-   Workers overview once so the account gets its `workers.dev` subdomain.
-2. An API token: My Profile → API Tokens → Create Token → the **Edit Cloudflare Workers** template,
-   limited to that one account (it includes Account › Workers Scripts › Edit, which deploys the
-   Worker and its Durable Objects).
-3. In GitHub: Settings → Secrets and variables → Actions → New repository secret:
-   `CLOUDFLARE_API_TOKEN` (the token) and `CLOUDFLARE_ACCOUNT_ID` (shown on the Workers overview).
-   Optional: a repository *variable* `RELAY_URL` (e.g. `wss://relay.example.com`) for a custom domain.
-4. The next push to `main` deploys the relay and builds the site with its address. Please don't
-   paste the token into a session.
+## Owner key (`OWNER_KEY`): set, waiting on the merge
+The owner added the `OWNER_KEY` repository secret (27 November 2026). The deploy workflow passes it to the
+Worker as a Worker secret on the next push to `main`, so the owner area (problem reports from M41, the
+weekly challenge's board from M44, and the submissions from M48) switches on when pull request #24 is
+merged and deployed: then open `https://pxwom6.github.io/CityBloom/#/owner` and sign in with the key
+(kept on that device until signing out). Until then the live owner area says it isn't set up. To change
+the key, update the secret and push to `main`; never paste it into a session or commit it.
 
-Phases 1–4 (with phase 4's review follow-ups) and the war models (PR #22) are merged into `main`,
-which deploys the live site at https://pxwom6.github.io/CityBloom/. **Phase 5 (war between cities,
-SPEC-5.md, M34–M40) is complete, its end included** (the playthroughs through the real UI and their
-fixes), on this branch, in pull request #23 for the owner to merge. Online
-rooms need the Cloudflare setup above; peer-to-peer works without it.
+Phases 1–5 are merged into `main` (phase 5 in PR #23), which deploys the live site at
+https://pxwom6.github.io/CityBloom/ and, on Cloudflare, the relay for online rooms. **Phase 6
+(playing with friends, SPEC-6.md, M41–M49) is complete** on the branch `claude/ecstatic-brown-64m0nb`,
+which stands in for `friends` (made from `main` at 9490cb2), and waits in pull request #24 for the
+owner's merge. M41–M49 were done in a cloud session; the phase's end (this summary, SPEC_REVIEW, the
+README, the playthroughs and the Mac checks) on the owner's Mac.
 
 - [x] M0 Foundation
 - [x] M1 Roads and zoning
@@ -61,12 +56,22 @@ rooms need the Cloudflare setup above; peer-to-peer works without it.
 - [x] M38 Investments and the war economy
 - [x] M39 War with friends
 - [x] M40 The final race: the atom bomb
+- [x] M41 Hearing about problems
+- [x] M42 Learning to play
+- [x] M43 Quick match
+- [x] M44 Weekly challenge
+- [x] M45 Timelapse
+- [x] M46 Your own buildings
+- [x] M47 Making buildings
+- [x] M48 Send it in
+- [x] M49 Phones (done after M42, before M43)
 
-**Phase 5 (war between cities, SPEC-5.md, M34–M40) is complete: M34 to M40 and the phase's end.** Branch: this cloud session's `claude/new-session-a0qpy4` stands in for `war` (made from `main` at 6883790, after PR #22 brought
-in the war models). Each milestone ends with an `M<n> complete:` commit and a pull request into
-`main` from this branch; a milestone finished while the last one's pull request is still open joins
-it. Reasons for every call are in `docs/DECISIONS.md`, "Phase 5"; the brief's items and where each is
-done in `docs/SPEC_REVIEW.md`, "Phase 5".
+**Phase 6 (playing with friends, SPEC-6.md, M41–M49) is complete.** M49 (phones) came after M42
+and before M43, as the brief asks. Branch: `claude/ecstatic-brown-64m0nb` stands in for `friends`.
+Every milestone ended with an `M<n> complete:` commit and joined pull request #24 into `main`, which
+holds the phase's end too. Reasons for every call are in `docs/DECISIONS.md`, "Phase 6"; the
+brief's items and where each is done in `docs/SPEC_REVIEW.md`, "Phase 6". Phase 5 is complete and
+merged (its notes stay below and in git).
 
 ## Multiplayer review follow-ups (PRs #17–#21)
 The owner's review before merging phase 4 (`MULTIPLAYER-FOLLOWUPS.md`, given to the session): fixes on
@@ -231,6 +236,28 @@ within Cloudflare's free plan. Checked by 2,017 unit tests,
 the war specs in `e2e/` (two players through the real UI for war between friends), a two-hour four-player region
 soak and the cross-browser test on every push.
 
+**Phase 6 (playing with friends, M41–M49)** is for sharing Citybloom with mates from school. The game
+hears about problems by itself: crashes, errors and desyncs are reported with nothing that names anyone,
+beside a "Report a problem" button, and read in an owner area behind a key only the owner holds (M41). A
+new player's first city is an eighteen-step tutorial to 1,000 residents with an arrow at the button to
+press and first problems explained as they come, and Learn has short lessons on towns made for them
+(M42). It plays properly on a phone: a Phone preset at 30 fps, one finger to pan and two to pinch,
+twist and tilt, a long press to inspect, a bottom bar and sheets, a memory budget, and slow phones caught
+up when joining a friend (M49). A quick match puts two to four friends' cities side by side for 15–30
+minutes at 3×, Race, Rich list, Happy town or Mixed, with a scoreboard, emotes, peeks, one shared result
+and a one-click rematch (M43). A weekly challenge, the same for everyone, made from the week alone, has a
+board where every score is checked by replaying its run, a friends' board by group code, and Watch (M44).
+City history makes a timelapse video of the city from its first road in two clicks, an MP4 that plays in a
+group chat (M45). Players bring in their own buildings, checked against the model spec with the reasons
+in plain words and pictures, worn in their cities and shared rooms (M46), learn to make one in the
+Workshop's five steps with the prompt for an AI 3D tool written for them (M47), and send buildings and
+ideas to the owner, who accepts or declines them with a reply, crediting the player in Accepted ideas
+(M48). Nothing a player writes reaches another player before the owner approves it, there are no accounts,
+and everything new (three Durable Objects with SQLite) stays within Cloudflare's free plan with old data
+swept on a schedule. Single player, co-op, regions and war play as before; saves went from v32 to v34
+and the relay from protocol 7 to 9, each with migrations, tests and a plain message for older clients.
+The phase's end played it through the real UI (`e2e/phase6-finale.spec.ts`, see "In progress").
+
 ## Ideas for what's next
 0. **War, further** (from phase 5's playthroughs; DECISIONS "Phase 5 end"): a grace for a young city's
    first war (no total war declared on a city under 3,000 residents or two years old); a wrecked power
@@ -260,27 +287,575 @@ soak and the cross-browser test on every push.
    the scenario star thresholds want a second look once real players have tried them.
 
 ## In progress
-**Phase 5 is complete, its end included**, in pull request #23 (its title names all seven milestones).
-Nothing is under way; what's left is the owner's: merge PR #23, the real-device list under "To check
-on the Mac" (what needs a person: speakers, touch, two real machines, Cloudflare), and the Cloudflare
-setup above for online rooms. A round of checks on the Mac's GPU followed the phase's end (frame times,
-the bench, the playthrough in one run, the war's looks, the snapshot size): all inside the budgets, two
-fixes (the top bar folding in a war city, a flaky test); numbers under "Performance (phase 5 checks)".
+**Phase 6 is complete, its end included** (SPEC-6.md, "When every milestone is done"), done on the owner's Mac
+and waiting in pull request #24 (title and description cover the whole phase).
+- Docs: the summary here, SPEC_REVIEW's "When every milestone is done (phase 6)", the README's "Play with friends"
+  overview with pictures from headed Chrome on the GPU (the picture scripts take `GPU=1`: `scripts/dev/gpuLaunch.mjs`).
+- The playthroughs: `e2e/phase6-finale.spec.ts` (`@playthrough`; `PHASE6_GPU=1` for a real Chrome window), seven
+  tests, all passing ("Tests (phase 6 end)"): a new player's first city on a laptop with a timelapse and a report; the
+  same by touch on an iPhone upright and a Pixel sideways; a four-player quick match with two on phones; this week's
+  real challenge played four years, posted and watched on a phone; a building made in the Workshop, shared to a
+  friend's phone and sent in with an idea; the owner area on an iPhone handling it all. Tests 6 and 7 read what 1
+  and 6 leave in `test-results/phase6`, so run the file whole.
+- Fixed on the way (each in DECISIONS "Phase 6 end", with a test where it can): a generator week's honest runs
+  replayed to another city and would have been dropped (`fetchRun`); zone strokes off the kerb grew nothing (the zone
+  tool paints the front row); "no curve" thrown by visible cars on a split road; the Workshop's Copy missing a name
+  just typed (WebKit); first problems from "Let time run"; the tutorial on phones (touch words everywhere, a card
+  that folds while the player acts and stays folded, compact beside a sheet, notices clear of it and letting a
+  finger through, arrows into More and onto a panel's tab); quick panel visits counted; zone paint over a data map;
+  the lesson card beside its panel; four cities on a phone's scoreboard; the owner area's clock; "Load city".
+- The Mac checks: frame times at High, Medium, Low and Phone and against `main`, the timelapse and custom-building
+  benches on the GPU, the Workshop and Send it in in WebKit and Chrome, fix-layout's P13 and P14, the online joins,
+  bench, balance and cross-browser ("Performance (phase 6 end, the owner's Mac)", "Tests (phase 6 end)"). Two known
+  issues seen only on this Mac, the same on the build before the phase end (Known issues).
 
-Phase 5's end (SPEC-5.md, "When every milestone is done"): the summaries (this file's top, SPEC_REVIEW's
-phase 5 section, the README with two war pictures), then three playthroughs through the real UI on the
-owner's Mac on the GPU, kept as `e2e/phase5-finale.spec.ts` (`@playthrough`, ≈12 min): a war with a
-computer neighbour from the main menu, a war between two players with a third watching the live battle,
-and the atom bomb race between them to the fallout, the winter and the pariah. Nineteen findings fixed,
-each with a test (war words that agree with their numbers, the battle bar's targets named, notices kept
-off the battle map, the battle map in a player's words, a join told once, a strike's notices not
-tripled, urgent tips first, seasons under a nuclear winter, a losing city's peace terms, the HQ's
-refusal naming its cause, MW for power), then in the cloud the war room's tabs in two rows and short
-war scales with their meaning beneath. Left with a proposal (DECISIONS "Phase 5 end", and "Ideas for
-what's next" below): a grace for a young city's first war, a raid that blacks out a town, odds in the
-Send tab, a computer's refusal with its reason, the bomb in a friends' war score, softer cloud puffs.
-Pictures: `docs/screenshots/phase5-*.png` (fourteen, looked at). Tests on the final code: the unit suite,
-2,039 tests in 185 files, typecheck, lint and prettier pass; the cross-browser test is green on every push.
+**M48 Send it in is complete** (plan `docs/plans/M48-design.md`), joining M41–M47 and M49 in pull
+request #24.
+
+M48 in short: "Send an idea" on the main and pause menus, and "Send it in" on each building in My
+buildings and the Workshop's last step, open one screen. An idea is a kind (a building, a feature, a
+fix, a scenario or challenge, something else), a title, a description and, if ticked, a picture of the
+game; a building is a model from My buildings (so it has passed the check) with its name, target and a
+line; either may carry a "credit me as" name. Before it goes the player sees exactly what will be sent,
+picture included, and that only the game's maker sees it unless it's picked. What I sent lists their
+own with statuses (Sent, Seen, "Coming in an update", "Not this time") and the owner's reply, through a
+private token in the browser (the relay keeps only its SHA-256); Accepted ideas shows only accepted ones
+with credits. The desk is a third Durable Object (`SubmissionsObject`, migration v4): 5 a day per
+browser and per address and 300 in all, capped fields and bodies, 2,000 kept and 400 MB of files, 3,000 rows a day,
+declined ones deleted 30 days after the decision. The owner area's Submissions section: filters,
+idea text and picture, a building's turntable by day and night with the game's check run in the owner's
+browser, Seen/Accept/Decline with a reply, Delete, the word filter for credit names, Download GLB named
+with its credit, Copy for Claude Code; every press 44 px on a touch screen. Calls: DECISIONS "M48";
+SPEC_REVIEW "M48"; numbers: "Tests (M48)".
+
+**M47 Making buildings is complete** (plan `docs/plans/M47-design.md`), joining M41–M46 and M49 in
+pull request #24.
+
+M47 in short: the Workshop (My buildings' second tab, and the Learn page's Making buildings lesson, now
+ready on a small town of its own) takes a player from nothing to a building in their city in five
+steps. Pick: a landmark size or a building to give a new look, with a picture of its site from above and
+the side, its footprint, height range and triangle budget. Make: with an AI 3D tool, the whole prompt
+written for the building in the owner's own prompt style (the spec v6 word for word, the site, budget,
+file name and roles), copied in a click, the style sheet to download; or in Blender, five basics each
+with a picture. Check: the check's problems as a teacher's notes (what's wrong, why the game cares, how
+to fix it) with the picture; every common mistake has its own (centimetres, backwards, floating, too
+many triangles, unnamed parts, colours not named by role, and more). See: on its lot in a street beside
+two of the game's own buildings, by day and night, in each season. Use: into My buildings, placed,
+shared; sending in is M48. The guide `docs/making-buildings.md` (linked from the README and the
+Workshop): the five steps with pictures made through the real UI, a worked example from start to
+finish, the common mistakes, and the plain-words spec generated from the check's own numbers. Phones
+upright and sideways. Calls: DECISIONS "M47"; SPEC_REVIEW "M47"; numbers: "Tests (M47)".
+
+**M46 Your own buildings is complete** (plan `docs/plans/M46-design.md`), joining M41, M42, M49, M43,
+M44 and M45 in pull request #24.
+
+M46 in short: My buildings (the landmarks row's My buildings…, or the panel `buildings`) takes a GLB or
+a `.citybloom-building` a friend sent, picked or dropped; it's measured to suggest what it fits (a
+landmark of 1×1 to 4×4, or the civic buildings whose site it fills), then checked in a worker by the
+build's own check (spec v6, the target's site and triangle budget) plus a 1 MB cap and nothing pointing
+outside the file; a refusal lists each problem in plain words with a picture (from above and the front,
+the site in green, the problem parts in red). A model is kept with its name and shown on a turntable by
+day or night in each season (the game's own building material); Place (a landmark of the player's own,
+a park of its size in the sim, or a new civic building wearing it), Rename, .glb, Share, Delete. Any
+civic building but a big project changes look in its inspector; a model serves every target it fits.
+The sim holds only the model's hash on the building (save v34); saves carry the models their city
+wears, so a city opens anywhere with them (and a region's copy carries up to 3 MB of them for
+visitors). In a shared city a page that lacks a model asks the room by hash (protocol 9) and the first
+page that has it answers in capped parts the room passes on and never keeps; everything arriving is
+checked again. "Show friends' custom buildings" (on by default) and the host's Custom buildings switch
+for the room. Phones upright and sideways. Calls: DECISIONS "M46"; SPEC_REVIEW "M46"; numbers: "Tests
+(M46)", "Network (M46)", "Performance (M46)".
+
+**M45 Timelapse is complete** (plan `docs/plans/M45-design.md`), joining M41, M42, M49, M43 and M44 in
+pull request #24.
+
+M45 in short: while a city plays, every 3 game hours the game draws one small frame (960×540, always
+by day) from one of two views in turn, the whole map and an orbit of the busiest part of town, through
+the ordinary pipeline with the interface hidden, and keeps it in IndexedDB with the population then. A
+view keeps 400 frames and a city 32 MB (thinned evenly past that, so a long city keeps every year), 160
+MB for all cities. On by default ("Record a timelapse" in Settings). The key goes beside the city in its
+saves; a city from before the update starts recording when opened and City history says so; a joined
+shared city records on each player's own machine. City history's Make timelapse: 15, 30 or 60 seconds,
+the whole map or the busiest area, overlays (name, date, population, milestones and disasters), music
+from the game's own synthesiser; an MP4 with H.264 (WebCodecs, else MediaRecorder) that plays on
+phones and in chats, shared through the share sheet or downloaded, with the first and last frames as
+pictures. Phones upright and sideways. Calls: DECISIONS "M45"; SPEC_REVIEW "M45"; numbers: "Tests
+(M45)", "Performance (M45)".
+
+**M44 Weekly challenge is complete** (plan `docs/plans/M44-design.md`), joining M41, M42, M49 and M43
+in pull request #24.
+
+M44 in short: a new challenge every Monday at midnight in Adelaide, made from the week alone (a map
+from a pool of 83 the balance mayor grows a town on, one of five goal templates with a growth goal,
+and a twist: a tight budget, no city highways, an early disaster, rail only or a small map; four
+years), or a hand-made one the owner pins. "This week's challenge" on the main menu (its name, time
+left, top score) opens the challenge screen: the map, goals, twist, money, time and how it scores;
+Play (as often as wanted) or Continue your try; the board this week, by friends' group code and last
+week, with Watch beside each kept run. A challenge city opens on its brief, shows its score in the
+goals panel, autosaves to a slot of its own (marked in the load list) and ends on a card with the
+score, Post score, Try again and the board. A score goes with its run (every command and save at its
+tick, frozen the moment the challenge ends, packed) and the hash and score it claims; the board checks
+what it can cheaply and keeps each player's best; players' pages replay the top runs they haven't
+checked and a run that doesn't replay is dropped (the owner can put it back). Watching a run replays
+it in the game, at any speed or straight to its end, and says whether it came to the same city. The
+owner area lists each week's entries (remove, put back, watch), pins a challenge and filters names.
+Save v33. Phones upright and sideways. Calls: DECISIONS "M44" (with what a modified client could still
+do); SPEC_REVIEW "M44"; numbers: "Tests (M44)", "Network and storage (M44)", "Balance (M44)".
+
+**M43 Quick match is complete** (plan `docs/plans/M43-design.md`), joining M41, M42 and M49 in pull
+request #24.
+
+M43 in short: "Quick match" on the main menu: the host picks Race (to 5,000, 10,000 or 15,000), Rich
+list, Happy town or Mixed, a 15-, 20- or 30-minute timer and a map, and hosts online or in this
+browser; two to four friends join by code or link, each founding their own small city on the same
+seed, side by side in a shared region (their cities don't trade). The room keeps the clock: a
+5-second countdown, then each page runs its city towards the tick the time allows at 3× (no pausing,
+building only while it plays; a page that started late catches up to the room's clock), and the room
+counts a report only within that allowance. A fast start ($200,000, growth ×2, unlocks at half their
+population) tuned by the balance mayor playing matches. A scoreboard along the top with the timer
+(warning for the last minute, big numbers for the last ten seconds), six emotes (chat if the host
+allows), a peek at a rival (its picture each minute, its figures, Look round). At the end every page
+stops and sends its state hash; the room decides one result (winner, numbers, hashes, a chart).
+Rematch in one click (a new seed; pages reload into it and it starts once everyone's back), Keep this
+city and Play on, Back to menu. Leavers are out and the match goes on; an online host who leaves
+hands over (a reload keeps the part a minute); peer-to-peer, the match ends with the host's browser.
+Protocol 8. Phones upright and sideways. Calls: DECISIONS "M43"; SPEC_REVIEW "M43"; numbers:
+"Network (M43)", "Balance (M43)".
+
+**M49 Phones is complete** (done after M42, before M43; plan `docs/plans/M49-design.md`), joining
+M41 and M42 in pull request #24.
+
+M49 in short: measured first in phone emulation with the CPU slowed 4× (`scripts/dev/phoneprobe.mjs`),
+and fixed what it showed for every preset: construction sites drawn in cells (one mesh of every site
+was rebuilt every frame in a growing city), stale building chunks rebuilt at most every 0.25–1.5 s and
+sized beforehand, tree regions a few a frame, chunk arrays let go once on the GPU (and built again if
+the context comes back). A **Phone** preset below Low (a capped resolution, no shadows, near draw
+distance, half the trees, a quarter of the cars and people, simpler water and smoke, sooner hand-overs,
+paced rebuilds; the same bright look), a frame-rate cap (30 on a phone by default) and a battery saver,
+still scenes drawn at 10 fps, and a first-launch check that knows phones and tablets. **Touch**: one
+finger pans, a pinch zooms, a twist turns, two fingers sliding up or down tilt; a long press inspects or
+shows what the tool would do (and opens tooltips; `title`s show in a bubble); roads and terrain ask
+with the price before spending by touch; Done ends a road chain. **The phone layout**: one bottom row
+with names (Select, Roads, Zones, Build, Clear, Maps, More, Undo), Build and More open sheets, panels
+open as sheets from the bottom (upright) or the right (sideways) and close by dragging, a one-row top
+bar sideways, 44 px presses, 12 px text at least, safe areas; the map editor says it needs a bigger
+screen. **Memory**: a measured 700 MB budget (the 20k city about 500 MB), a question before a phone
+opens a city too big for it, a page closed while a city showed reported on the next visit. **Data**:
+the first download's size on the boot screen; scenarios and lessons cached only once opened.
+**Installing**: either orientation; export through the share sheet (Save to Files) and an import
+picker iPhone's Files can use; on an iPhone a card suggests keeping a copy in Files. **Slow joiners**
+(the known issue since M33): the room holds the city up to 30 s for a joiner catching up, the pacer
+keeping within 60 ticks of them, and the worker catches up in bulk; a phone with its CPU slowed 4×
+joins a busy room and is in step in about 18 s (`e2e/m49-join.spec.ts`). Calls: DECISIONS "M49";
+SPEC_REVIEW "M49"; numbers: "Performance (M49)".
+
+M42 in short: the first-city tutorial grew from eight steps to eighteen, ending at 1,000 residents
+(roads, homes, jobs, power, water, the demand bars, the budget and taxes beside it, services and a
+coverage map, the advisors, saving), with short sentences, a bouncing arrow at the button to press,
+the camera flying where it matters, the game holding still only while a card is read, first
+problems (a fire, a power cut, a jam) taught once each the moment they come, steps already done
+ticking themselves off, and Skip this step / Leave for now / Continue the tutorial / Skip tutorial.
+Learn on the main menu: seven lessons on small towns made for them (traffic, money, services,
+disasters, districts, friends, war marked opt-in) and making buildings marked as coming with the
+Workshop. A card for a player joining a friend's room the first time. The advisors count down
+before homes without power or water empty, and tell a town without services it will shrink and
+what to build first, said once in a notice when a day or less away. Calls: DECISIONS "M42";
+SPEC_REVIEW "M42"; plan `docs/plans/M42-design.md`.
+
+M41 in short: problem reports from the page (uncaught errors and rejections, the sim worker, both
+battle workers, failed saves, loads and imports, the models file failing at start-up) and desyncs (a
+shared city's, from the page that fell out of step and from the pacer's; a live battle's two runs
+ending differently), cleaned so they name nothing (no names, city names, chat, saves or typed text;
+addresses without query strings), folded across builds, three a minute, queued in IndexedDB while
+offline. "Report a problem" in the main and pause menus (a message, a picture of the 3D view, what
+will be sent shown first); "Send crash reports" in Settings → Game with one sentence on the main menu
+once; a tip. The report desk on the relay (`ReportsObject`, SQLite: 1,000 entries, 300 items / 30 MB,
+6,000 rows a day, deleted 60 days after last seen) and the owner area (`owner.html`, `#/owner`) behind
+`OWNER_KEY`, checked on every request: entries newest first with counts, versions, browsers, first
+seen; fixed entries that reopen on a newer build; pictures; desync replays to download; Copy for
+Claude Code. `scripts/desync.ts` replays a downloaded desync in Node and finds the split (a city
+founded on the pacer's machine replays from nothing more; any other start from a save given by
+hand). Calls: DECISIONS "M41"; design: DESIGN §3.35; SPEC_REVIEW "M41". Numbers: "Performance (M41)".
+
+## Next tasks
+1. The owner merges pull request #24 (it deploys the relay with `OWNER_KEY`: the owner area, the weekly board and
+   the submissions switch on).
+2. The real-world checks: "To check on the Mac" (real phones, real Safari, the live relay) and "To try with a mate"
+   (a quick match between real friends, phones included; a first-time player with no help; a mate's first building
+   with the Workshop).
+3. What's next is the owner's call ("Ideas for what's next").
+
+## Tests (phase 6 end)
+- **The playthroughs** (`PHASE6_GPU=1 PLAYTHROUGH=1 npx playwright test e2e/phase6-finale.spec.ts`, headed Chrome on
+  the M5): all seven pass in one run on the final code, 20.3 min. The laptop's first city had 1,218 residents when
+  the tutorial ended (a first power cut met on the way) and made a 30 s timelapse with music in 3.9 s; the iPhone's
+  reached 1,058 and the Pixel's 1,241 by touch alone (the Pixel met the fire lesson); a four-player match's two
+  rounds, every page agreeing on each result and hash; this week's challenge (week 47, "Happy town: tight budget" on
+  Lakelands) ended after 49 months at 1,664 points, and a Pixel replayed it to the same city in under 30 s; the
+  Workshop's first try got its two notes; the owner area on an iPhone handled a report, the board and both
+  submissions, and the player read both answers. Pictures `docs/screenshots/phase6-*.png`, looked at.
+- **Unit tests**: 2,199 in 214 files pass (2,184 in 209 at the start of the phase end; new: touch words, the
+  tutorial's quick visits and first problems, the zone tool's front row, a fetched run replaying, visible cars on a
+  split road, the owner area's clock). M40's zone tool test's stand-in game gained the road network the front row
+  reads.
+- **E2E rerun beside them** (Playwright's Chromium on SwiftShader, as the suite runs, one file at a time): smoke,
+  m11-shell, m42-tutorial (3), m42-learn (2), m49-phone (5), m44-phone (4), m41-reports (5), m48-submit, m48-phone (6),
+  m47-workshop, m47-phone (4), m46-buildings (2), fix-layout (all 26, **P13 and P14 included**, which time out in the
+  cloud VM), fixes-ui (2), fix-input (6), review-touch (2), m33-narrow (2), **m30-rooms online** (it failed in the
+  VM), m30-lobby, m31-together and m49-join pass. In WebKit (`playwright.webkit.config.ts`): m47-workshop and
+  m48-submit pass. **Failing here, and the same on the build before the phase end (6eb76c5), so not the phase end's
+  doing**: every peer-to-peer join under Playwright on this Mac, in its Chromium and in Chrome (m30-rooms p2p,
+  f2-trystero, m43-phone's peer-to-peer match; the online ones pass; they passed in the cloud VM at M49): likely
+  macOS keeping headless pages' WebRTC off the local network; and m44-challenge's first test, whose page reaches
+  the main menu about 30 s late in that spec only, so the menu's challenge line isn't filled within the check's 30 s
+  (in a probe of the same steps it fills in a second after the menu; the challenge plays, posts and replays in the
+  playthrough and in m44-phone). Both under Known issues.
+- **Cross-browser** (`XB_FIREFOX=0 npm run xbrowser`): Chromium and WebKit give Node's state hash at every month end
+  for 24 months (10.5 s and 14.4 s); the SpiderMonkey shell isn't fetched on this Mac, so Firefox's engine waits for
+  the pull request's `xbrowser.yml` run.
+- **Bench** (`bench.ts 6 --big`): 110,174 residents at month 6, months 4–6 tick avg 0.24–0.27 ms, p99 2.1–2.6 ms,
+  1.46 s in all: as in the phase 5 checks on this Mac (0.27 / 2.5).
+
+## Performance (phase 6 end, the owner's Mac)
+- **Frame times on the GPU** (headed Chrome, frame cap off, `framebench.mjs bench-results/city.gz --quality
+  high,medium,low,phone`: the 110,174-resident bench city in a 1512×785 window at 2×, every view at 3× speed;
+  avg / p95 ms, then draw calls and triangles; `bench-results/frames-phase6-end.json`):
+
+  | | whole city | city | street | whole city, night | city, night | street, night | heavy |
+  |---|---|---|---|---|---|---|---|
+  | High | 7.6 / 13.4 | 13.1 / 29.4 | 10.8 / 12.2 | 8.7 / 12.2 | 13.2 / 30.0 | 10.9 / 12.3 | **9.1 / 15.9** |
+  | Medium | 3.9 / 6.7 | 3.8 / 6.7 | 3.4 / 6.0 | 4.2 / 6.8 | 4.2 / 6.9 | 3.5 / 5.4 | 4.4 / 7.2 |
+  | Low | 2.9 / 3.8 | 2.4 / 3.9 | 1.6 / 2.8 | 2.8 / 3.8 | 2.4 / 3.9 | 1.7 / 2.8 | 2.8 / 4.1 |
+  | Phone | 2.9 / 4.2 | 2.7 / 3.3 | 1.8 / 2.9 | 2.9 / 4.2 | 2.7 / 3.4 | 1.8 / 2.9 | 3.0 / 4.4 |
+
+  Calls and triangles at the whole city: High 236 / 2.45M, Medium and Low 176 / 1.88M, Phone 174 / 1.85M; at street
+  level High 235 / 2.25M, Medium 99 / 1.07M, Low 87 / 1.01M, Phone 84 / 0.97M. Every average is inside SPEC-3's
+  60 fps (16.7 ms) at High; the city zoom's p95 at High (29–30 ms) was there before (batch 5: 12.1 avg). The Phone
+  preset (uncapped here; 30 fps on a phone) costs about what Low does on this GPU: its savings are in the GPU's
+  fill (a capped resolution) and memory, which a phone feels and an M5 doesn't. It looks like the game (the
+  playthroughs' phone pictures, `docs/screenshots/phase6-b-*.png`, `phase6-c-*.png`).
+- **Against `main`** (built from 9490cb2 to `dist-main`, High, two runs each back to back, avg ms): whole city 7.95
+  against 7.29, city 13.04 against 12.05, street 10.77 against 10.72, heavy 8.19 against 9.36. The city zoom's extra
+  millisecond didn't survive a profile of each (`--profile`: 12.88 against 12.81 ms, the game's own work 12.54 ms in
+  both, `bufferData` the top cost in both): the same within run-to-run noise.
+- **Timelapse captures on the GPU** (`GPU=1 node scripts/dev/timelapsebench.mjs bench-results/city.gz`, Medium, the
+  player at the city view): the player's frames 4.4 ms of work (115 calls, 1.49M triangles); a whole-map capture
+  3.6 ms of the main thread (worst 9.7; 221 calls, 2.36M); a busiest-area capture 25.5 ms (worst 70.9; 327 calls,
+  3.73M), most of it the orbit view's chunks uploaded the first time they're seen. At 3× that is one long frame
+  every 15 s (the views take turns every 7.5 s), 0.19 % of the main thread; the averages and p95 don't move. Left as
+  is; drawing the orbit capture from the far chunks would shorten it (an idea, not done).
+- **Players' own buildings on the GPU** (`npx tsx scripts/dev/customcity.ts 150`, then `GPU=1 node
+  scripts/dev/custombench.mjs`, High): 150 landmarks wearing a model at 85 % of their triangle budget against the same
+  buildings in the game's look: work per frame 1.93 / 2.05 / 2.66 ms (overview, city, street) against 1.97 / 2.35 /
+  2.74, the same calls; nothing measurable.
+- **Balance** (`balance.ts 20 careful,greedy,neglectful`): careful 67,373 residents, $1,838,985, 73 % at year 20,
+  identical to M48's (the sim is untouched at the phase end: the zone tool's front row is the page's, and replays
+  are unchanged); greedy 420, $566,259, 16 %; neglectful 354, $479,816, 36 %.
+- **The Workshop and Send it in in WebKit** (Safari's engine: `npx playwright test -c playwright.webkit.config.ts
+  m47-workshop m48-submit`): both pass after the Copy fix (DECISIONS "Phase 6 end"); in Chrome they're played through
+  in the phase-6 playthrough (tests 6 and 7, real Chrome on the GPU).
+
+## Tests (M48)
+- Unit: 2,184 tests in 209 files pass (the unit and live projects). `relay/tests/submissions.test.ts`
+  (the desk: shapes, sizes, the model's hash and outside links, a GLB whose JSON isn't an object;
+  a token reading only its own and the accepted list only accepted; 5 a day per token and per address,
+  the address count surviving an evicted object and gone with the day, 300 a day in all, a full inbox
+  by count and by bytes; the 30-day sweep; every owner route refused without the key or with a wrong
+  one, and the owner's key still opening it while guessing is slowed). `tests/reports/owner.test.ts`
+  (players' words fenced for Claude Code, a fence they can't close); `relay/tests/reports.test.ts`
+  (the owner never locked out by wrong keys).
+- E2E: `e2e/m48-submit.spec.ts` (1.8 min): an idea with a picture from the pause menu and a building
+  from My buildings, each previewed then sent; the owner area accepts the idea with a reply, checks,
+  turns and downloads the building (`clock-pavilion-by-ada.glb`), declines it with a reply; What I sent
+  shows both statuses and replies; Accepted ideas and `GET /submit/accepted` show only the accepted one;
+  no key and a wrong key refused; another token reads nothing; six sends from one browser straight to
+  the relay: five taken, the sixth refused; a 1.6 MB body refused. `e2e/m48-phone.spec.ts` (iPhone and
+  Pixel, upright and sideways: the form, its picture, the preview, What I sent, Accepted ideas, a
+  building on two; the owner area on an iPhone both ways, an idea and a building opened, decided, every
+  press 44 px). Rerun beside them: `m41-reports`, `m46-buildings`, `m47-workshop`, `m47-phone` (12
+  passed). The pictures (`docs/screenshots/m48-*.png`) were reviewed; they led to the owner list's
+  title column, the owner area's buttons (the game's class it doesn't load) and 44 px presses on touch.
+- A security review by a fresh reader (DECISIONS "M48"): no way past the key, no leak; five fixes made.
+- Bench (`bench.ts 6 --big`): 5.0 s, month 6 tick avg 0.90 ms at 110,174 residents. Balance (20
+  years, careful): identical (67,373 residents, $1,838,985, 73 %). The sim is untouched since M47;
+  the pull request's cross-browser run (Chromium, WebKit, Firefox) and the relay's live tests pass.
+
+## Network and storage (M48)
+- A submission is one request (an idea a few kB, with a picture up to 400 kB of base64, the e2e's about
+  70 kB; a building up to 1.4 MB); opening What I sent or Accepted ideas is one small request each.
+  Rows written per submission: the row, its address count, the day's budget (and the salt on the day's
+  first send), so at most about 1,200 rows a day under the 300-a-day cap, within the desk's own 3,000.
+- Storage: at most 2,000 kept and 400 MB of pictures and models (with text, under half a GB) of the free
+  plan's 5 GB of Durable Object storage; declined ones go 30 days after the decision.
+
+## Tests (M47)
+- Unit: 2,177 tests in 208 files pass (the unit and live projects). New `tests/workshop.test.ts`: the spec text held
+  to the prompt files, the targets, the prompt (site, budget, file, roles, a player's words cleaned), a
+  note of its own for each common mistake (each a model that makes it), the readable spec from the
+  check's numbers and the guide's copy current, the worked example's prompt and pictures.
+- E2E: `e2e/m47-workshop.spec.ts` (2.6 min): from the main menu's Learn page into the lesson's town on
+  the Workshop; a 2×2 landmark picked; the copied prompt names the site, budget, file and every role;
+  the style sheet downloads; the Blender steps; each of the six common mistakes checked and named by its
+  own note, a first try with two; the good model passes, is seen by night in winter, added and placed in
+  the town, which ends the lesson. `e2e/m47-phone.spec.ts` (iPhone and Pixel, upright and sideways,
+  every step with `phoneProblems`; a model checked and added on two). `e2e/m42-learn.spec.ts` now
+  expects the lesson enabled (not re-run: its 30 minutes of other lessons don't change).
+- Bench (`bench.ts 6 --big`): 5.8–6.0 s, month 6 tick avg 1.1 ms; the M46 tip run straight after in a
+  worktree took 6.4 s, so this hour's VM is slower than M46's 4.4 s run and the sim is unchanged (the
+  same populations month by month). Balance (20 years, careful): identical (67,373 residents,
+  $1,838,985, 73 %). Cross-browser: the sim is untouched; the pull request's xbrowser run checks it.
+- The guide's pictures (`docs/screenshots/workshop-*.png`) were reviewed: the five steps, the notes,
+  the street by day, night and winter, the pavilion placed among Maker's Green's homes.
+
+## Performance (M46)
+`npx tsx scripts/dev/customcity.ts 150` then `npm run build:test && node scripts/dev/custombench.mjs`
+(High, 1280×800, SwiftShader): a town with 150 2×2 landmarks all wearing a heavy model (1,276
+triangles, 85 % of the landmark's budget, 116 kB), loaded from its save (the model arriving with it and
+checked again), against the same city with "Show friends' custom buildings" off (the game's own plaza
+on each):
+
+| View | Draw calls (custom / plain) | Triangles (custom / plain) | Page's work a frame (ms) |
+|---|---|---|---|
+| Overview | 115 / 115 | 481 k / 617 k | 3.1 / 3.1 |
+| City (650 m) | 126 / 126 | 1.09 M / 1.30 M | 2.9 / 2.4 |
+| Street (140 m) | 146 / 146 | 1.48 M / 1.42 M | 2.7 / 2.2 |
+
+- Draw calls don't change: a player's model is merged into the same level-of-detail chunks as the
+  game's own buildings. From afar a custom landmark is lighter than the generated plaza (whose trees
+  are drawn as trees); close up, 4 % more triangles. The page's own work stays within half a
+  millisecond (SwiftShader frames: seven a view, so noisy). The frame budget holds; frame times on the
+  Mac's GPU are under "To check on the Mac" (`GPU=1`, and `framebench.mjs` on the same save).
+- Checking a model: the check and bake take 7 ms for the 19 kB pavilion and 22 ms for the 116 kB heavy
+  one (Node, the same code the worker runs); in the page a worker's start-up and the copy come on top
+  (the e2e's imports come back within a couple of seconds on SwiftShader).
+
+## Network (M46)
+- A model passes through a room once per page that lacks it, in parts of up to 160,000 base64
+  characters: the 19 kB pavilion is one message of 25 kB, a 1 MB model nine messages, 1.4 MB in all
+  (one per page asking; the room sends each part only to those waiting). Nothing is stored: no rows
+  written, no storage. On Cloudflare a model costs at most nine incoming messages (under half a request
+  on the free plan's 20:1 count) per page that asks; the caps (40 asks and 6 million characters a
+  minute a player, 64 models waiting a room) bound a page that asks or sends too much.
+- Snapshots never carry models (the snapshot cap is untouched); a region's copy of a city carries at
+  most 3 MB of base64 of models, within its 8 MB cap.
+
+## Tests (M46)
+- Unit: 2,169 tests in 207 files pass (the unit and live projects), then the review's fixes' tests
+  (relay and lockstep suites again: 377 in 32 files). New: `tests/customCheck.test.ts` (the check, the
+  probe, suggestions, what a model fits), `tests/customLook.test.ts` (looks and landmarks in the sim, save
+  v34, a hostile save's looks dropped), `relay/tests/roomModels.test.ts` (the room's relay, its caps, a
+  wrong answer skipped, stale transfers forgotten, the host's switch), the cross-browser `looks` section.
+- Bench (`bench.ts 6 --big`): 4.4 s, months 4–6 tick avg 0.71–0.83 ms, as before. Balance (20 years,
+  careful): identical (67,373 residents, $1,838,985, 73 %): the landmarks are new buildings the mayor
+  never builds, and looks change nothing in the sim.
+- E2E: `e2e/m46-buildings.spec.ts` (3.5 min): four refused files (too wide: "It is 19 × 19 m; its site
+  is 16 × 16 m" and the parts outside it; data in another file; a texture; 1.2 MB), each with its
+  picture; the good pavilion added, on the turntable by night and in winter, shared as a building file,
+  placed as a 2×2 landmark from the landmarks row and as a pocket park's look from its inspector, saved
+  and opened as on another device (My buildings emptied: the save brings the model, drawn on both
+  buildings, and the shared file makes it the player's own again); then a friend joins a shared city,
+  fetches the model through the room and draws it, hides it with the setting off, and nobody sees it
+  while the host has custom buildings off (Sam's `setLook` refused then). `e2e/m46-phone.spec.ts` (1.5
+  min): iPhone and Pixel, upright and sideways, by touch (`phoneProblems` on the panel empty, with a
+  refusal and with a model; placed by touch on two). Pictures: `docs/screenshots/m46-*.png`.
+- Cross-browser: the `looks` section passes in Chromium here and in Chromium, WebKit and real Firefox
+  on the pull request (the browser spec now compares the match and challenge sections too).
+
+## Tests (M45)
+- Unit: 2,153 tests in 204 files pass (the unit and live projects; new: `tests/timelapse.test.ts`: the thinning on a twenty-year city, the video's frame
+  schedule, the orbit, the overlays).
+- E2E: `e2e/m45-timelapse.spec.ts` (17 min + the shared city's 1 min): three game years recording, then a
+  15, 30 and 60 s timelapse made through City history, each playing its length at 960×540, more town at
+  its end than its start, downloaded as an MP4 with H.264, the first and last pictures as JPEG; a long
+  city within its limit (the real store thinning with small limits); a scenario's city older than its
+  recording, saying so; recording off; a shared city recording on both machines. `e2e/m45-phone.spec.ts`
+  (8.4 min): iPhone and Pixel, upright and sideways, by touch, `phoneProblems` on the Timelapse line and
+  the card, a video made on two. Pictures kept: `docs/screenshots/m45-*.png`.
+- Re-run beside City history's new line: m16-photo-history (it found photo mode's 2× pictures saving at
+  1× since M49: fixed, passes), m39-history, and review-legacy's first two saves (Ashton, v19-highlands;
+  the rest, the same panels on older saves, weren't re-run).
+- Videos here: a 15 s video of a year's town is 2.7–4.7 MB (H.264 Baseline, 30 fps, 960×540), made in
+  about a minute on this VM's software encoder (a 60 s one in about four); music is Opus here (Linux
+  Chromium has no AAC encoder), peaking −5 dB.
+- Bench (`bench.ts 6 --big`): 4.2 s, months 4–6 tick avg 0.67–0.82 ms, as before. Balance (20 years):
+  identical (careful 67,373 residents, $1,838,985, 73 %): the timelapse is page-side only. Cross-browser:
+  Chromium here passes (24 months equal to Node); WebKit and real Firefox run on the pull request.
+
+## Performance (M45)
+`npm run build:test && node scripts/dev/timelapsebench.mjs bench-results/city.gz` (the 110k bench
+city, Medium, the player at the city view):
+- The player's view: 234 draw calls, 2.59 M triangles. A capture of the whole map: 221 calls, 2.36 M
+  triangles; of the busiest area: 254 calls, 2.97 M. A capture draws what one ordinary frame does, once
+  every 7.5 s of real time at 3× (22.5 s at 1×); its JPEG is encoded off the frame.
+- SwiftShader's main-thread time for a capture (0.9–1.1 s) is the software renderer drawing it (an
+  ordinary frame here takes about a second too), so it says nothing; the Mac's numbers are under "To
+  check on the Mac".
+- Frames: about 65 kB for a small town, 112 kB for the bench city; a big city's 32 MB keeps about 140
+  frames a view (thinned evenly).
+
+## Tests (M44)
+- Unit: 2,147 tests in 203 files pass (the unit and live projects; new: `tests/challenge.test.ts`, `tests/challengeRun.test.ts`,
+  `tests/challengeClient.test.ts`, `relay/tests/week.test.ts`, `relay/tests/challengeBoard.test.ts`).
+  Cross-browser: Chromium here passes (24 months and the new `challenge` section equal to Node: a run
+  recorded, frozen at its end and replayed); WebKit and real Firefox run on the pull request.
+- E2E: `e2e/m44-challenge.spec.ts` (6.6 min): two players play a pinned six-month challenge from the
+  main menu, laying roads and zones with the mouse and placing power, water and a septic tank from the
+  toolbar, a group made and joined; both post; both boards show both, each ticked by a replay; Kit's run
+  watched to the end replays to the same city; a forged score (a real run with a wrong hash) comes off
+  the board once a page checks it, dropped in the owner's list; the board's clock and the page's moved
+  across Monday 00:00 in Adelaide show the next week's challenge with last week's results kept.
+  `e2e/m44-phone.spec.ts` (6.5 min): iPhone and Pixel, upright and sideways, by touch, `phoneProblems`
+  on the screen, the friends tab, the brief, the end card, the board and the run viewer; played and
+  posted on two of them. Pictures kept: `docs/screenshots/m44-*.png`. Re-run and passing beside the
+  new main-menu entry and the scenario screens it shares: m11-shell, m18-scenarios, m42-learn,
+  app-install and review-followups (11 tests, 18.6 min).
+- Bench (`bench.ts 6 --big`): 4.3 s, months 4–6 tick avg 0.75–0.77 ms, as before (a first run read
+  5.0 s; the second matched M43). Balance (20 years): identical (careful 67,373 residents, $1,838,985,
+  73 %): a city that never plays a challenge is unchanged. The lesson towns were rebuilt at save v33
+  (`scripts/lessons.ts`): the same cities, only the version moved.
+
+## Network and storage (M44)
+- A visit to the challenge screen: `GET /challenge/current` (about 2 kB with a pin), `GET
+  /challenge/board` (about 4 kB for 50 rows), and up to two runs fetched and replayed (one on a phone)
+  with a verdict each: at most 6 requests. A post is one request carrying the packed run.
+- Runs: the mayor's are 30–70 commands, 1.2–1.4 kB packed; a busy, scattered player's 2,000 commands
+  are about 75 kB (5,000 about 185 kB); the cap is 256 kB of text. Replaying a four-year run takes
+  1–3.4 s here (the mayor's 52 weeks), in a worker of its own.
+- The free plan's day: about 8,000 screen visits fit the requests (2 each for the Worker and the
+  object, 100,000 a day); rows written are capped at 5,000 a day (a post writes about 3, a verdict
+  1–2: some 1,500 posts), of the object's 100,000; a board view reads its week's rows by an index (at
+  most 500), so 5 million rows read allow about 10,000 views. Storage: at most 2 weeks × (500 entries
+  and 100 runs of at most 256 kB) ≈ 51 MB, about 15 MB with busy players' runs, of 5 GB.
+
+## Balance (M44)
+`npx tsx scripts/challenges.ts 52 <first> careful --replay` (the careful mayor plays each week's
+challenge as a player's city is founded; each run recorded, packed and replayed):
+- Weeks 46–97 (the coming year): 52 of 52 won, in 3–43 months; scores 4,387–9,352 (median 6,910);
+  every run replayed to the same hash and score (at most 70 commands, 1.4 kB packed, 3.4 s); 149 s.
+- Weeks 0–51: 52 of 52 won, in 3–36 months; scores 4,724–9,352 (median 7,009); every run replayed
+  (at most 54 commands, 1.2 kB, 3.0 s).
+- Each template and twist pairing turns up once or twice a year. Logs: `bench-results/challenges-52*.log`.
+
+## Tests (M43)
+- Unit: 2,096 tests in 193 files pass (new: `tests/match.test.ts`, `tests/matchClient.test.ts`,
+  `relay/tests/matchRoom.test.ts`); live: 25 pass. Cross-browser (Chromium here, WebKit and Firefox
+  on the pull request's CI) with the new `match` section.
+- E2E: `e2e/m43-match.spec.ts`, four chains of four rounds (every mode; two and four players; online
+  against the local relay and peer-to-peer; three rematches each; two players leaving the last round of
+  the four-player online chain, the host among them), every page on the same result and each page's
+  hash the one listed, 40 min; `e2e/m43-phone.spec.ts`, an iPhone and a Pixel by touch, upright and
+  sideways, online and peer-to-peer, with a rematch, Keep this city and Play on, 8 min. Pictures kept:
+  `docs/screenshots/m43-*.png`.
+- Bench (`bench.ts 6 --big`): 4.2 s, months 4–6 tick avg 0.69–0.79 ms, as before. Balance (20 years):
+  identical (careful 67,373 residents, $1,838,985, 73 %): the fast start is only for match cities.
+
+## Network (M43)
+`npx tsx scripts/dev/matchbudget.ts 20 4` (four careful mayors' cities on the fast start, a 20-minute
+match in a region room, sending what a match page sends):
+- Each player: 12 messages a minute sent (a report every 5 s, the picture each minute, a save to look
+  round every 5 minutes), 70 kB a minute (1.36 MB a match, mostly the saves of a 15,000-resident
+  city); 48 messages a minute received (the score lines), 20 kB a minute (385 kB a match). Fewer
+  messages than a co-op player at 3× (64 a minute, M33).
+- One match against the free plan's day: 993 incoming messages = 50 requests (of 100,000); at most
+  154 GB-s of duration (1.2 % of 13,000: the room is awake for the match); 39 rows written (of 100,000;
+  the region's own day allows 3,000). About 84 four-player matches a day fit the free plan, the same
+  rate as co-op hours (duration is the limit).
+- In the e2e's one-minute rounds a page receives 30–55 kB with two players and 80–145 kB with four
+  (pictures go on their own as they change: before, each new picture resent the whole view with all
+  four, 380–550 kB a round).
+
+## Balance (M43)
+`npx tsx scripts/matchBalance.ts [minutes] [seeds]`: the careful mayor (and the greedy and neglectful
+ones) play matches on the fast start ($200,000, growth ×2, unlocks at half their population).
+- 20 minutes, six seeds: the careful mayor reaches 10,000 at 11.0–14.5 minutes and ends at
+  16,000–27,000 residents; Race, Rich list, Happy town and Mixed all won in their time 6/6. The
+  greedy and neglectful mayors, built for long play, stay at a few hundred residents (a poor plan loses).
+- 15 minutes: 10,000 at 11.0–14.5 minutes (6/6), the Rich list's winner richer than it started 5/6
+  (it spends on growing), Happy town 6/6. 30 minutes: 33,000–55,000 residents, every mode 6/6.
+- Without the fast start the careful mayor ends 20 minutes at 1,100–2,400 residents.
+- Ordinary cities don't move: the fast start is a multiplier of 1 without `GameOptions.match`.
+
+## Performance (M49)
+Measured with `scripts/dev/phoneprobe.mjs` (Playwright's iPhone 13 and Pixel 7 emulation, CPU
+throttled 4× by CDP, Low quality; SwiftShader draws on the CPU here, so frame intervals mean
+nothing; read the game's own work per frame, scripts per frame from a CPU profile, draw calls,
+triangles, heaps and the renderer process's private memory). Worker CPU isn't throttled by CDP.
+| city (iPhone, Low) | work/frame avg (overview, street) | private memory | page + worker heap | GPU |
+|---|---|---|---|---|
+| demo town, 27k, growing | 98, 61 ms → 61, 38 ms | 543 → 486 MB | 25 + 15 MB | 62 MB |
+| 20k (`Saves/Town20k.citybloom`) | 14, 13 ms → 16, 14 ms | 426 → 418 MB | 50 + 14 MB | 68 MB |
+| bench, 110k, sandbox | 268, 160 ms → 75, 55 ms | 897 → 742 MB | 38 + 24 MB | 111 MB |
+(before → after the first fixes). What it showed: in a growing city the one construction mesh was
+rebuilt every frame (40 % of the main thread in the bench city), stale skyline chunks were rebuilt
+every frame, and three.js kept a CPU copy of every uploaded chunk (the page's ArrayBuffers were
+164 MB in the demo town, 249 MB in the bench city; the sim worker's are 4 MB). Download: a first
+visit is 1.6 MB gzipped, but the service worker then fetches the scenarios (4.3 MB) and lessons
+(0.7 MB) in the background: fixed (extras on first use). Ticks at 1×: 1–3 ms (unthrottled worker).
+
+**At the Phone preset** (`phoneprobe.mjs --cities 20k,bench --devices iphone,pixel --quality phone
+--check`): the main thread's load projected to 30 fps on a CPU 4× slower (every frame's own work, 9–19
+ms paused, 30 times a second, plus the work paced by time) is 39–54 % in the 20k city and 61–79 % in
+the 110k bench city (target 80 %; one run's bench city view read 81 % before a paused city's worker
+stopped posting empty frames that woke the interface); 62–174 draw calls and 0.57–1.88 M triangles.
+Memory, the 20k city: 328–339 MB private plus 65 MB on the GPU (budget 700 MB); the bench city 813–915
+MB plus 102–111 MB (over a phone's budget: it asks first). Canvas 390×664 (iPhone 13), 412×839 (Pixel 7).
+E2E: `m49-phone` (four towns by touch and the two-finger camera, 5 tests, 7.7–12 min), `m49-join` (a
+4× throttled phone in step 18–20 s after opening the link); every panel pictured both ways up
+(`phonepanels.mjs`, every control 44 px and on the screen after the fixes; kept
+`docs/screenshots/m49-*.png`); m11-shell, m15-publish, m30-rooms (online and peer-to-peer: passes on
+this VM now), m39-narrow, m39-touch-scale and review-touch pass; fix-layout's P13 and P14 time out here
+as on the M42 build (VM slowness).
+- **Bench** (`bench.ts 6 --big`): 4.5 s, months 4–6 tick avg 0.76–0.87 ms: as before (the sim didn't
+  change).
+- **Balance** (20 years): identical (careful 67,373 residents, $1,838,985, 73 %).
+- **Tests**: the whole unit project, 2,078 tests in 190 files, and the live project (25 tests, the new
+  slow-joiner tests included) pass; typecheck, lint and prettier pass. Cross-browser: Chromium here
+  passes; WebKit and real Firefox run on the pull request.
+- **Network**: a joiner's hold adds one optional field to the room's player list; nothing else
+  travels between players.
+
+## Performance (M42)
+- **E2E through the real UI** (this VM, Playwright's Chromium on SwiftShader): `e2e/m42-tutorial.spec.ts`,
+  three tests, 10.9 min: the whole tutorial from the main menu to 1,000 residents (1,196 at the end;
+  a power cut's lesson met on the way), leaving, skipping a step and resuming after a reload, and
+  all 21 cards at 100 % and 140 % and on a phone (63 pictures, contact sheets looked at);
+  `e2e/m42-learn.spec.ts`, two tests, 7.6 min: every lesson played from the Learn screen, and the room
+  card with two players. Kept pictures: `docs/screenshots/m42-*.png`.
+- **Bench** (`bench.ts 6 --big`): 4.5 s, months 4–6 tick avg 0.73–1.16 ms: as before (the sim's tick
+  didn't change; advice is read-only).
+- **Balance** (20 years, careful, greedy, neglectful): identical to phase 5 (careful 67,373 residents,
+  $1,838,985, 73 %).
+- **Tests**: the whole suite, 2,090 tests in 192 files (unit and live), passes; typecheck, lint and
+  prettier pass. Cross-browser: Chromium here passes; WebKit and real Firefox run on the pull request.
+- **Network**: nothing new travels between players (the room card reads the rules the page has).
+- **Download** (first measurement for M49, `scripts/dev/download.mjs`, a production build): a first
+  visit to the main menu and a new city fetches 1.6 MB gzipped (the game 594 KB, the models 515 KB,
+  the demo town 265 KB, the sim worker 224 KB); a second visit fetches nothing (the service worker).
+  The lesson towns (90–120 KB each) download only when a lesson opens.
+
+## Performance (M41)
+- **E2E through the real UI** (this VM, Playwright's Chromium on SwiftShader, against the local relay):
+  `e2e/m41-reports.spec.ts`, four tests, 2.3 min: a deliberate error from two pages folds into one
+  entry (×2) naming nothing; with crash reports off an error and a rejection send nothing; a written
+  report with a picture from the pause menu reaches the owner area (phone size); a forced desync
+  between two players reaches it from both sides and the pacer's downloaded replay, run through
+  `scripts/desync.ts`, replays the browser city in Node bit for bit (17 game hours) and finds the
+  split; the main menu's one-time sentence. Pictures looked at: `docs/screenshots/m41-*.png`.
+- **Bench** (`bench.ts 6 --big`): 6.0 s, months 4–6 tick avg 1.01–1.16 ms, p99 9.5–10.7 ms: as in
+  phase 5 (6.3–6.7 s, 0.93–1.30 ms). Nothing in the sim's tick changed.
+- **Balance** (20 years, careful, greedy, neglectful): identical to phase 5 (careful 67,373 residents,
+  $1,838,985, 73 %; greedy 420, $566,259, 16 %; neglectful 354, $479,816, 36 %).
+- **Cross-browser**: Chromium here passes (24 months equal to Node); WebKit and real Firefox run in
+  `xbrowser.yml` on the pull request.
+- **Network**: rooms send nothing new but the room's `resync` word (at most 48 sums, about 2.5 KB,
+  only when a game falls out of step). A report is one HTTP request to the Worker and one to the desk,
+  about 3 rows written; a page sends three a minute at most.
+- **Storage**: the desk's worst case is about 35 MB of the free plan's 5 GB (DECISIONS "M41").
+- **Owner area**: about 4 KB gzipped, a page of its own, not in the offline copy.
+
+## Phase 5 notes (complete, merged in PR #23)
+Phase 5's end and the checks on the Mac are described in git history and `docs/SPEC_REVIEW.md`,
+"Phase 5"; the per-milestone summaries below are kept for reference.
 
 M40 in short: the final race for one atom bomb a city, ever. It unlocks with all 24 research tiers;
 it needs a running nuclear plant, an enrichment plant (seen region-wide the day it is placed), fuel,
@@ -350,11 +925,6 @@ and, through the region room, friends (protocol 5), computer neighbours' own tec
 fair clock, save v30; the war room's Research and Intelligence tabs, superweapon effects with a
 cost switch per quality. Two reviews (13 and 3 findings) and the e2e's own finds, all fixed.
 Calls: DECISIONS "M37"; design: DESIGN §3.31; SPEC_REVIEW "M37". Numbers: "Performance (M37)".
-
-## Next tasks
-1. The owner: merge PR #23 (phase 5) into `main`.
-2. Still open from phase 4 and phase 5: the real-device checks under "To check on the Mac".
-3. Then, if wanted, the phase 5 ideas under "Ideas for what's next".
 
 ## Performance (phase 5 checks, the owner's Mac)
 - **Frame times on the GPU** (headed Chrome, frame cap off, `framebench.mjs` on `bench-results/war.gz`:
@@ -827,6 +1397,13 @@ clinic's and the police station's most). `tree_spot`s within a metre or two of a
 crown into the wall (a few homes, and two at the back of the remade `C213`).
 
 ## Known issues
+- **Peer-to-peer joins under Playwright on the Mac** (phase 6 end): m30-rooms p2p, f2-trystero and m43-phone's
+  peer-to-peer match time out with the joining page never in the room, in Playwright's Chromium and in Chrome alike,
+  on the phase's end and on the build before it; online rooms pass. Probably macOS keeping headless pages' WebRTC
+  off the local network. The real test is two machines (PROGRESS "To check on the Mac", "To try with a mate").
+- **m44-challenge's first test on the Mac** (phase 6 end, and on the build before it): the page reaches the main menu
+  about 30 s late in that spec only, so its check of the menu's challenge line (30 s) fails; the same steps in a probe,
+  and the challenge in the playthrough and m44-phone, are fine. Not found in the time; it passes in the cloud VM.
 - The atom bomb (M40): a computer neighbour races only on Hard after year 20, and only once its weapons
   are at their top tier, which happens only after the city researches its own; computer neighbours
   have no weather, so for them the nuclear winter is a drag on growth; the region keeps 16 marks of the
@@ -841,13 +1418,13 @@ crown into the wall (a few homes, and two at the back of the remade `C213`).
   cannot finish a battle the city still hosts (a different picture, or orders at steps already
   played) still stands in for it and fights it whole, as before, logged with its reason (no soak has
   met one since the fix).
-- A player joining a city that's running has to catch up, and the room doesn't wait for joiners. If
-  the player keeping time doesn't answer the room's request for a fresh snapshot within 8 s (a slow
-  machine), the room hands over its stored one and the joiner replays from there. On the cloud VM's
-  software-rendered pages that replay sometimes never catches the room up (m30-rooms, m31-together,
-  the Trystero spec's join): seen on the original M33 tip too. Worth a look on a slow phone; if it
-  shows, the room could wait for a joiner within a limit, or the pacer could settle off the main
-  thread's frame budget.
+- A player joining a city that's running catches up while the room holds the city for them, up to
+  30 s (M49); a joiner slower than that (a tab put away, a very old phone) is then left to catch up as
+  before. m30-rooms now passes on this VM. The pacer's snapshot is still gzipped on the main thread
+  (the 8 s fallback to the stored one remains for a pacer too busy to answer).
+- fix-layout's P13 (hovering every tooltip, 180 s) and P14 (data-map clicks with 5 s limits) time out
+  on this VM: a hover or click takes 3–5 s on the software renderer, the same on the M42 build. Run
+  them on the Mac.
 - Photo mode's depth of field is a screen-space gather: fine for stills, but thin bright things right against a blurred background can show a faint halo, and saving at 2× takes up to a minute on this VM's software renderer (a fraction of a second on a GPU).
 - The follow camera loses a car when it parks (the panel says so); buses loop for good.
 - Homes without power or water still empty after about two days; the balance runs show a careful player never hits this, so no grace period was added.
@@ -1247,14 +1824,100 @@ misses with either build (`startup-slow.log`).
 - Night town (720 residents, M9): ~95 draw calls, ~0.75M triangles on SwiftShader. A tornado adds 3 point systems (~2,200 points); flood water is one mesh; dust bursts share one point system.
 - Procedural models: mean triangles per building R0 139, R1 329, R2 622, C0 102, C1 254, C2 481, I 174–217 (`scripts/dev/modelstats.ts`).
 
+## To try with a mate
+_Checks that need a real new player (phase 6). Each milestone adds its own._
+- (M42 onwards: a first-time player with no help; a quick match between real friends; a mate making a
+  first building with the Workshop.)
+- M49 phones: an iPhone and an Android phone, each added to the home screen ("Add to Home Screen" in
+  Safari's share menu; "Install" in Chrome's menu): it should open full screen with the Citybloom icon
+  and splash, on the Phone preset at 30 fps. Play 20 minutes on each (a new city to a few thousand
+  residents) and note how warm the phone gets and how much battery goes; build roads, zones and
+  services by touch, open the budget and the inspector (a long press), undo, save, export a copy to
+  Files and import it back. Then a co-op game with a laptop (the phone joining the laptop's running
+  room): both stay in step, the phone catches up on joining. Try the 20k city (Saves/Town20k.citybloom,
+  imported) and see that it runs; the 110k bench city should ask first.
+
+- M48 send it in: once the next deploy is out, a mate sends you an idea with a picture from their
+  phone, and later a building they made in the Workshop, with no help: do they find "Send an idea" and
+  "Send it in", and does the preview make clear only you will see it? You review both in the owner
+  area on your phone (accept one with a reply, decline the other); they open What I sent a day later and
+  see the statuses and your reply, and the accepted one in Accepted ideas with their name.
+- M47 making buildings: a mate who has never made a 3D model opens Learn → Making your own buildings
+  and follows the Workshop and the guide (`docs/making-buildings.md`) with no other help, once with an AI
+  3D tool and once in Blender: where do they get stuck, do the teacher's notes tell them what to do, and
+  does their building end up in the lesson's town? Note how long it takes.
+- M46 your own buildings: a mate who has never made a 3D model follows the model guide in Blender
+  (free) to make a small building, exports a GLB and adds it in My buildings: do the refusals' words
+  and pictures tell them what to fix? Then each of you sends the other a building as a
+  `.citybloom-building` through a chat, imports it on a phone, and places it; and in a shared city
+  (one of you hosting on a laptop, the other on a phone), each other's buildings arrive and show, the
+  phone's setting hides them, and the host's switch turns them off for both.
+
+- M43 quick match: two to four friends on their own devices, at least one a phone, over the internet
+  (the live site, an online match, then one hosted in a browser): Quick match from the main menu,
+  the host picks Race, 20 minutes; the others join from the invite link. Does a newcomer understand
+  the lobby, the scoreboard and the results without help? Is a Race to 10,000 in 20 minutes close
+  (a good player should just make it; the balance mayor takes 11–15 minutes)? Try a rematch in
+  another mode, a player leaving mid-match, the host leaving (online: someone else hosts; in a
+  browser: the match ends), Keep this city and Play on, and a phone locked for a minute mid-match
+  (it should catch up when unlocked).
+
+- M45 timelapse: a mate who has played a city for an evening makes a 30 s timelapse on their phone
+  without help (City history → Make timelapse) and sends it to you in a group chat: does it play there,
+  is it clear and smooth enough, is the music welcome? Do they find the busiest-area view worth it?
+
+- M44 weekly challenge: once the next deploy is out, a mate plays this week's challenge on the live
+  site from their own phone with no help: do they find it on the main menu, understand the goals,
+  the twist and how it scores, post a score and find it on the board? Make a group, give them the
+  code, and see both scores on the friends board; each watch the other's run (Skip to the end) and
+  see it say "same city". Note how long the replay takes on their phone, and whether a four-year
+  challenge feels too long (the balance mayor takes 3–43 months).
+
 ## To check on the Mac
+- **Ran at the phase-6 end on this Mac** (numbers under "Performance (phase 6 end, the owner's Mac)"): framebench at
+  High, Medium, Low and Phone (and against `main`); timelapsebench and custombench with `GPU=1`; the Workshop and Send
+  it in in WebKit and in real Chrome; fix-layout's P13 and P14 and the running-city joins (see "Tests (phase 6
+  end)"). What stays below needs a real phone, real Safari, the live relay (after the merge) or a friend.
+- Phase 6 (M48): the owner area's Submissions on your own phone against the live relay
+  (`SubmissionsObject` on Cloudflare's runtime: the tests use Node's SQLite stand-in): a building's
+  turntable by night, its check, Download GLB (does Safari keep the name?) and Copy for Claude Code; the
+  send screen's picture in Safari; bringing an accepted building in with `npm run models:check` and a
+  pull request, its credit in CREDITS.md.
+- Phase 6 (M47): the Workshop in real Safari (copying the prompt to the clipboard, the style sheet's download,
+  the street preview by night; WebKit and real Chrome pass at the phase end); a model made in Blender itself following the
+  Workshop's five steps, and one from Claude Design with the Workshop's prompt, both through the check;
+  the guide as GitHub shows it once merged (pictures and the spec table).
+- Phase 6 (M46): (custombench with `GPU=1` ran at the phase end: nothing measurable) the turntable preview in
+  real Safari and on a real phone, by night and in winter; a GLB exported
+  from Blender itself (the tests' models are written by hand) through the checker; drag and drop of a
+  `.glb` from Finder onto the panel.
+- Phase 6 (M45): (timelapsebench with `GPU=1` ran at the phase end: a busiest-area capture is one 25 ms frame
+  every 15 s at 3×) making a 60 s timelapse in real Safari (the hardware encoder's time, AAC music; in Chrome a
+  30 s one with music takes 3.9 s);
+  the MP4 sent through WhatsApp and iMessage to a phone, and saved to Photos.
+- Phase 6 (M44): the challenge screen and the run viewer in a real Chrome and Safari window against
+  the live relay (`ChallengeObject` on Cloudflare's runtime: the tests use Node's SQLite stand-in);
+  the owner area's Weekly challenge on your phone (pin a challenge for next week, remove and put back
+  an entry); typing a name on a real phone's keyboard on the end card; replaying a busy run (a
+  real four-year city, not the mayor's 70 commands) on the Mac and on a phone, for the time it takes.
+- Phase 6 (M43): a full 20-minute quick match between Chrome and Safari on the Mac against the live
+  relay (two windows), to see the timer, the scoreboard and the last minute at real speed, and the
+  results' chart over a whole match (the e2e here plays one-minute matches).
+- Phase 6 (M49): (the Phone preset beside Low ran at the phase end: 1.8–3.0 ms, as Low on an M5) Safari's
+  Responsive Design Mode on an iPhone size, upright and sideways (the safe areas only show on a real phone
+  or the simulator).
+- Phase 6 (M41): once `OWNER_KEY` is set and the next deploy is out, open the owner area on your phone
+  (`https://pxwom6.github.io/CityBloom/#/owner`), sign in, and send yourself a report from the live
+  game (pause → Report a problem, with a picture): it should arrive within a few seconds, from the
+  Worker on Cloudflare's runtime (the tests use Node's SQLite stand-in for the Durable Object). Turn
+  Send crash reports off and on in Settings → Game in Safari and Chrome.
 - Phase 5 (M40): the siren, the countdown's tick, the blast and the wind through real speakers; holding
   the launch button by finger on a tablet and a phone; a strike between two real machines over
   peer-to-peer (every test runs the room in one process); the cloud, flash and fallout tint by night;
   a long Hard game with a player who researches, to meet a computer neighbour's race.
 - Phase 5 (M39): a live battle between two real machines peer-to-peer over a real network (every
   test runs the room in one process: the live site offers peer-to-peer only); the region room on
-  Cloudflare's runtime once it is set up (tests use Node's SQLite stand-in for a Durable Object);
+  Cloudflare's runtime, now live (tests use Node's SQLite stand-in for a Durable Object);
   the lobby, war room and battle map
   on a tablet in landscape and at 80 % interface size; an ally's help and a spectator with three
   real players; a first pair of friends inviting each other, going to war and making peace with
@@ -1265,6 +1928,10 @@ misses with either build (`startup-slow.log`).
   looks on the GPU were checked in the phase 5 checks).
 - Phase 5 (M34): the raid siren and the gun pops through real speakers (the war models, units and their
   frame times on the GPU were checked in the phase 5 checks).
+- **Ran on the Mac at the phase-6 end**: m30-rooms online, m30-lobby, m31-together and m49-join pass; m30-rooms p2p,
+  f2-trystero and m43-phone's peer-to-peer match fail under Playwright here (Chromium and Chrome, the build before
+  the phase end too: Known issues), so peer-to-peer between real machines stays below. fix-layout (all 26, P13 and
+  P14 included) and fixes-ui pass.
 - Multiplayer review, e2e the cloud VM ran (October 2026, Playwright's Chromium on SwiftShader):
   app-install (3), smoke, m11-shell, m15-publish, m29-lockstep (alone, 5.9 min, all 72 hours equal
   to Node), m31-together (alone, 7.6 min), m32-region (20 min), m33-narrow (phone and tablet),
@@ -1289,7 +1956,7 @@ misses with either build (`startup-slow.log`).
 - Multiplayer review (F13): `e2e/m29-lockstep.spec.ts` (now compares all 72 hours) and
   `e2e/review-legacy.spec.ts` (now loads the v24 save too); the first `xbrowser.yml` run's Firefox and
   WebKit results.
-- Multiplayer (phase 4) on real devices: a Mac and a Windows PC in one city (online and peer-to-peer), Chrome with Safari, and a phone (the lobby, the room panel, joining by the invite link, pings and chat by touch); peer-to-peer across two different home networks (behind different routers); online rooms once Cloudflare is set up (a room kept overnight and reopened).
+- Multiplayer (phase 4) on real devices: a Mac and a Windows PC in one city (online and peer-to-peer), Chrome with Safari, and a phone (the lobby, the room panel, joining by the invite link, pings and chat by touch); peer-to-peer across two different home networks (behind different routers); online rooms on Cloudflare, now live (a room kept overnight and reopened).
 - Multiplayer (phase 4): Firefox. Playwright's Firefox doesn't launch on macOS 27 here, so the determinism test checks Firefox's engine through SpiderMonkey's shell; run `npm run xbrowser` with the Firefox project in a cloud session (Linux) or once Playwright's Firefox starts on this macOS, and try a shared city in a real Firefox window.
 - Installing (sharing the game): in Chrome and in Edge, the main menu shows Install Citybloom a moment after it opens; it brings up the browser's own dialog, installing opens the game in its own window with your cities under Continue, the tab says it's installed, and the installed window has no Install button. In Safari the button shows File → Add to Dock; the Dock app opens without Safari's cities until one is exported and imported.
 - Terrain and map editor (M24): how smooth dragging the terrain tool and the editor's big brushes feels (each pass rebuilds the terrain chunks under the brush); how a levelled terrace and a cut pass look close up; how a custom map's edge blends into the scenery beyond it (a sea painted to the edge fades out 400 m past it); the editor's labels and panels at 140 % interface size.

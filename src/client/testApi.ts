@@ -1,3 +1,5 @@
+import { TUTORIAL, TUTORIAL_EVENTS } from './tutorial';
+import { cleanTarget, fromBase64 } from './myBuildings';
 import type { DiplomacySummary } from '../sim/systems/diplomacy';
 import type { FriendsWarClient } from './friendsWar';
 import {
@@ -43,6 +45,7 @@ import type { BuildingData, CityStats, DisasterData } from '../sim/protocol';
 import { ZONED_DEFS } from '../data/buildings';
 import { CELL } from '../data/zones';
 import { renderSounds, type SoundCheck } from '../audio/check';
+import { renderTimelapseMusic } from '../audio/timelapseMusic';
 import type { AtomStage, AtomStats } from '../render/atom';
 import { BUILD_ID } from '../config';
 import type { CheckResult } from './graphicsCheck';
@@ -153,6 +156,100 @@ export interface TestApi {
     tickMsAvg: number;
     tickMsMax: number;
   } | null;
+  /**
+   * The timelapse (M45): the city's key, when its recording started and whether the city is older,
+   * frames and bytes kept per view, the last and slowest capture's main-thread time, and each view's
+   * stored frames (tick, population, bytes).
+   */
+  getTimelapse(): Promise<{
+    key: string | null;
+    startTick: number;
+    late: boolean;
+    frames: { wide: number; orbit: number };
+    bytes: number;
+    lastMs: number;
+    worstMs: number;
+    captures: number;
+    error: string | null;
+    busy: boolean;
+    lastDraw: { calls: number; triangles: number; view: 'wide' | 'orbit' } | null;
+    stored: {
+      wide: { tick: number; population: number; bytes: number }[];
+      orbit: { tick: number; population: number; bytes: number }[];
+    };
+  }>;
+  /**
+   * My buildings (M46): every model on this device (the player's own and friends'), the models the
+   * city's buildings wear, and how many buildings are drawn wearing one now.
+   */
+  getMyBuildings(): Promise<{
+    models: {
+      hash: string;
+      name: string;
+      target: unknown;
+      size: { w: number; d: number };
+      mine: boolean;
+      bytes: number;
+    }[];
+    inCity: string[];
+    drawn: number;
+  }>;
+  /** The tool that's out, and the place tool's building (M46: a player's own model by its hash). */
+  getTools(): {
+    active: string;
+    place: { armed: boolean; def: string; look: string | null; category: string };
+  };
+  /** Add a model as an import would (a base64 GLB, checked in the worker): its hash, or the problems. */
+  addMyBuilding(
+    glb: string,
+    name: string,
+    target: unknown,
+    mine?: boolean,
+  ): Promise<{ ok: boolean; hash: string | null; problems: string[] }>;
+  /** The timelapse's music rendered for `seconds`: its peak and average level (dB below full scale). */
+  timelapseMusicLevels(seconds: number): Promise<{ peakDb: number; rmsDb: number }>;
+  /** Test builds: game ticks between timelapse frames (a longer step grows years of city in fewer frames). */
+  setTimelapseStep(ticks: number): void;
+  /** Test builds: a view's frames and a city's bytes at most (the thinning on a "long" city, quickly). */
+  setTimelapseLimits(perView: number, cityBytes: number): void;
+  /** Draw and keep the next timelapse frame now. */
+  captureTimelapse(): void;
+  /**
+   * A quick match (M43) as this page sees it: the room's match (phase, round, settings, players, the
+   * result), the scoreboard, this city's place, the page's clock (ms left), the hash it sent last,
+   * whether the results card is open, the city kept, or why the match ended without a result.
+   */
+  getMatch(): {
+    active: boolean;
+    phase: string | null;
+    round: number;
+    settings: unknown;
+    slot: number;
+    host: boolean;
+    invite: string | null;
+    players: { slot: number; ready: boolean; out?: true }[];
+    standings: {
+      slot: number;
+      name: string;
+      score: number;
+      me: boolean;
+      out: boolean;
+      population: number | null;
+    }[];
+    result: unknown;
+    timeLeft: number;
+    started: boolean;
+    hash: string | null;
+    reached: number | null;
+    resultsOpen: boolean;
+    kept: string | null;
+    cut: string | null;
+    said: { from: number; e?: number; text?: string }[];
+    tick: number;
+    speed: number;
+    sent: { messages: number; bytes: number } | null;
+    received: { messages: number; bytes: number } | null;
+  };
   /** The shared region this city stands in (M32), as this page sees it; null when none. */
   getRegion(): {
     code: string;
@@ -295,7 +392,24 @@ export interface TestApi {
   /** Drop this page's connection to the room as a network would (it reconnects by itself). */
   netDrop(): void;
   /** Knock this page's city out of step (the room should catch it and resync). */
-  netPerturb(): void;
+  netPerturb(kind?: 'id'): void;
+  /** The tutorial (M42): the card showing, and a card shown on demand for pictures. */
+  getTutorial(): {
+    step: string | null;
+    index: number;
+    event: boolean;
+    lesson: string | null;
+    away: boolean;
+    saw: string[];
+    held: number | null;
+    speed: number;
+  };
+  showTutorialStep(id: string): boolean;
+  /** Problem reports (M41): throw an uncaught error, reject a promise, the reporter's counts, send now. */
+  throwError(message?: string): void;
+  rejectPromise(message?: string): void;
+  getReports(): Record<string, unknown> | null;
+  flushReports(): Promise<void> | undefined;
   lockstepShare(player: number): void;
   lockstepFeed(events: Stamped[], allow: number): void;
   lockstepState(): {
@@ -324,6 +438,8 @@ export interface TestApi {
       renderStats: RenderStats;
       tick: number;
       highwayZ: number;
+      /** Where the highway comes in, across (M44: a challenge's map). */
+      highwayX: number;
       /** Where the regional railway comes in (M20). */
       railway: { x: number; z: number } | null;
       segments: number;
@@ -341,7 +457,15 @@ export interface TestApi {
   /** Id of the first civic building with this def, or null. */
   findCivic(def: string): number | null;
   /** Civic buildings on the client mirror. */
-  getCivics(): { id: number; def: string; x: number; z: number; angle: number; stage?: number }[];
+  getCivics(): {
+    id: number;
+    def: string;
+    x: number;
+    z: number;
+    angle: number;
+    stage?: number;
+    look?: string;
+  }[];
   /** Vehicles as last drawn. */
   getVehicles(): { id: number; kind: string; phase: string; x: number; z: number }[];
   /** Road segment nearest (x, z) within 20 m. */
@@ -465,6 +589,15 @@ export interface TestApi {
   setSpeed(speed: 0 | 1 | 2 | 3): void;
   /** Every frame's interval (from one animation frame to the next) and work (the game's own frame), in ms, over `ms`. */
   recordFrames(ms: number): Promise<{ interval: number[]; work: number[] }>;
+  /** The worker's tick times and the page's frame rate (M49's phone probe). */
+  getPerf(): {
+    tickMsAvg: number;
+    tickMsMax: number;
+    ticksPerSecond: number;
+    droppedTicks: number;
+    fps: number;
+    frameMs: number;
+  };
   /** Resolves after n rendered frames (lets screenshots settle). */
   waitFrames(n: number): Promise<void>;
   errors: string[];
@@ -566,6 +699,11 @@ export interface TestApi {
   renderSounds(): Promise<SoundCheck[]>;
   /** Visible meshes per top-level scene object, and how many of them cast shadows (dev). */
   renderBreakdown(): { name: string; meshes: number; shadow: number }[];
+  /**
+   * Bytes the page keeps for each top-level scene object (M49): geometry arrays still held on the CPU
+   * (each geometry once), and what they and the textures take on the GPU; total in MB.
+   */
+  memoryBreakdown(): { name: string; cpu: number; gpu: number; geometries: number }[];
   /**
    * Triangles and draw calls each top-level scene object costs in the colour pass and in the
    * shadow pass of one frame drawn now (phase 3; dev and benchmarks).
@@ -837,6 +975,123 @@ export function installTestApi(game: Game): TestApi {
         tickMsMax: game.perf.tickMsMax,
       };
     },
+    getTimelapse: async () => {
+      const t = game.timelapse;
+      const info = t.info();
+      const list = async (view: 'wide' | 'orbit') =>
+        t.key
+          ? (await t.store.frames(t.key, view)).map((f) => ({
+              tick: f.tick,
+              population: f.population,
+              bytes: f.bytes,
+            }))
+          : [];
+      return {
+        key: t.key,
+        startTick: info?.startTick ?? 0,
+        late: info?.late ?? false,
+        frames: info?.frames ?? { wide: 0, orbit: 0 },
+        bytes: info?.bytes ?? 0,
+        lastMs: t.lastMs,
+        worstMs: t.worstMs,
+        captures: t.captures,
+        error: t.error,
+        busy: t.busy,
+        lastDraw: t.lastDraw,
+        stored: { wide: await list('wide'), orbit: await list('orbit') },
+      };
+    },
+    getMyBuildings: async () => {
+      await game.buildings.ready;
+      const inCity = game.looksInCity();
+      let drawn = 0;
+      for (const c of game.world.civics.values()) if (c.look && game.customModel(c.look)) drawn++;
+      return {
+        models: game.buildings.all().map((m) => ({
+          hash: m.hash,
+          name: m.name,
+          target: m.target,
+          size: m.size,
+          mine: m.mine,
+          bytes: m.bytes.length,
+        })),
+        inCity,
+        drawn,
+      };
+    },
+    getTools: () => {
+      const p = game.tools.place;
+      return {
+        active: game.tools.activeId,
+        place: { armed: p.armed, def: p.def, look: p.look, category: p.category },
+      };
+    },
+    addMyBuilding: async (glb, name, target, mine = true) => {
+      const t = cleanTarget(target);
+      if (!t) return { ok: false, hash: null, problems: ['no such target'] };
+      const r = await game.buildings.add(fromBase64(glb), name, t, mine);
+      return r.ok
+        ? { ok: true, hash: r.model.hash, problems: [] }
+        : { ok: false, hash: null, problems: r.problems.map((p) => p.words) };
+    },
+    timelapseMusicLevels: async (seconds) => {
+      const buf = await renderTimelapseMusic(seconds);
+      let peak = 0;
+      let sum = 0;
+      for (let c = 0; c < buf.numberOfChannels; c++)
+        for (const v of buf.getChannelData(c)) {
+          peak = Math.max(peak, Math.abs(v));
+          sum += v * v;
+        }
+      const db = (x: number) => Math.round(20 * Math.log10(Math.max(x, 1e-9)) * 10) / 10;
+      return { peakDb: db(peak), rmsDb: db(Math.sqrt(sum / (buf.length * buf.numberOfChannels))) };
+    },
+    setTimelapseStep: (ticks) => {
+      game.timelapse.step = ticks;
+    },
+    captureTimelapse: () => game.timelapse.capture(),
+    setTimelapseLimits: (perView, cityBytes) => {
+      game.timelapse.limits = { perView, cityBytes };
+    },
+    getMatch: () => {
+      const m = game.match;
+      const now = performance.now();
+      return {
+        active: m.active,
+        phase: m.phase,
+        round: m.round,
+        settings: m.settings,
+        slot: m.slot,
+        host: m.isHost,
+        invite: m.invite,
+        players: m.info?.players ?? [],
+        standings: m.standings().map((r) => ({
+          slot: r.slot,
+          name: r.name,
+          score: r.score,
+          me: r.me,
+          out: r.out,
+          population: r.fig?.population ?? null,
+        })),
+        result: m.info?.result ?? null,
+        timeLeft: m.timeLeft(now),
+        started: m.startAt > 0 && now >= m.startAt,
+        hash: m.hash,
+        reached: m.reached ?? null,
+        resultsOpen: m.resultsOpen,
+        kept: m.kept,
+        cut: m.cut,
+        said: m.said.map((x) => ({
+          from: x.from,
+          ...(x.e !== undefined ? { e: x.e } : {}),
+          ...(x.text ? { text: x.text } : {}),
+        })),
+        tick: game.world.stats.tick,
+        speed: game.speed,
+        sent: game.region ? { ...game.region.sent } : null,
+        received: game.region ? { ...game.region.received } : null,
+      };
+    },
     getRegion: () => {
       const r = game.region;
       if (!r || !game.regionCode) return null;
@@ -1060,7 +1315,58 @@ export function installTestApi(game: Game): TestApi {
       await game.region?.reportNow(true);
     },
     netDrop: () => game.net?.session.dropForTest(),
-    netPerturb: () => game.client.perturb(),
+    netPerturb: (kind) => game.client.perturb(kind),
+    getTutorial: () => {
+      const c = game.tutorialCard();
+      return {
+        step: c?.step.id ?? null,
+        index: c?.index ?? -1,
+        event: !!c?.event,
+        lesson: c?.lesson?.id ?? null,
+        away: game.settings.tutorialAway,
+        saw: [...game.tutorialSaw],
+        held: game.tutorial.heldSpeed,
+        speed: game.speed,
+      };
+    },
+    showTutorialStep: (id) => {
+      // A picture of the card as it is: nothing ticks it off or interrupts it meanwhile.
+      game.tutorial.frozen = true;
+      const k = TUTORIAL.findIndex((t) => t.id === id);
+      if (k >= 0) {
+        game.tutorial.event = null;
+        game.updateSettings({ tutorialStep: k, tutorialAway: false });
+        return true;
+      }
+      const ev = TUTORIAL_EVENTS.find((t) => t.id === id);
+      if (!ev) return false;
+      game.tutorial.event = ev;
+      game.notify();
+      return true;
+    },
+    // Problem reports (M41): a deliberate error, a rejected promise, and what the reporter has done.
+    throwError: (message = 'A deliberate test error') => {
+      setTimeout(() => {
+        throw new Error(message);
+      }, 0);
+    },
+    rejectPromise: (message = 'A deliberate rejected promise') => {
+      void Promise.reject(new Error(message));
+    },
+    getReports: () => {
+      const r = game.reporter;
+      return r
+        ? {
+            ...r.stats,
+            waiting: r.waiting,
+            canSend: r.canSend,
+            last: r.last
+              ? { ...r.last, shot: r.last.shot ? `${r.last.shot.length} chars` : undefined }
+              : null,
+          }
+        : null;
+    },
+    flushReports: () => game.reporter?.flush(true),
     lockstepShare: (player) => {
       if (!shared.listening) {
         shared.listening = true;
@@ -1096,6 +1402,7 @@ export function installTestApi(game: Game): TestApi {
         ...stats,
         renderStats: game.renderer.lastStats,
         highwayZ: w.netState.nodes.get(w.highway.connect)?.z ?? w.gen.params.highway.connectZ,
+        highwayX: w.netState.nodes.get(w.highway.connect)?.x ?? 0,
         railway: w.railway ? { ...w.netState.nodes.get(w.railway.connect)! } : null,
         segments: w.netState.segments.size,
         nodes: w.netState.nodes.size,
@@ -1342,6 +1649,7 @@ export function installTestApi(game: Game): TestApi {
         z: c.z,
         angle: c.angle,
         stage: c.stage,
+        look: c.look,
       })),
     getVehicles: () =>
       [...game.renderer.vehicles.positions].map(([id, v]) => ({
@@ -1380,6 +1688,14 @@ export function installTestApi(game: Game): TestApi {
     },
     hash: () => game.client.query<string>({ type: 'hash' }),
     setSpeed: (s) => game.setSpeed(s),
+    getPerf: () => ({
+      tickMsAvg: game.perf.tickMsAvg,
+      tickMsMax: game.perf.tickMsMax,
+      ticksPerSecond: game.perf.ticksPerSecond,
+      droppedTicks: game.perf.droppedTicks,
+      fps: game.fps,
+      frameMs: game.frameMs,
+    }),
     recordFrames: (ms) =>
       new Promise((resolve) => {
         game.frameSamples = [];
@@ -1417,6 +1733,41 @@ export function installTestApi(game: Game): TestApi {
         });
         return { name: o.name || `${o.type}#${i}`, meshes, shadow };
       }),
+    memoryBreakdown: () => {
+      const seen = new Set<unknown>();
+      const MB = 1048576;
+      return game.renderer.scene.children.map((o, i) => {
+        let cpu = 0;
+        let gpu = 0;
+        let geometries = 0;
+        o.traverse((m) => {
+          const mesh = m as Mesh & { instanceMatrix?: { array: ArrayLike<number> & { byteLength: number } } };
+          const g = mesh.geometry;
+          if (!g || seen.has(g)) return;
+          seen.add(g);
+          geometries++;
+          const arrays = [...Object.values(g.attributes), ...(g.index ? [g.index] : [])];
+          for (const a of arrays) {
+            const arr = (a as { array?: { byteLength?: number } }).array;
+            const n = arr?.byteLength ?? 0;
+            cpu += n;
+            gpu += n;
+          }
+          const im = mesh.instanceMatrix?.array;
+          if (im && !seen.has(im)) {
+            seen.add(im);
+            cpu += im.byteLength;
+            gpu += im.byteLength;
+          }
+        });
+        return {
+          name: o.name || `${o.type}#${i}`,
+          cpu: Math.round((cpu / MB) * 10) / 10,
+          gpu: Math.round((gpu / MB) * 10) / 10,
+          geometries,
+        };
+      });
+    },
     setGround: (level) => {
       game.renderer.groundDetail = level;
     },

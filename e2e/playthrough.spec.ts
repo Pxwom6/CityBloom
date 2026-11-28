@@ -225,13 +225,14 @@ test('playthrough: a first city from the main menu to a thriving town @playthrou
   expect(await place(page, 'water', 'septic', east)).toBe(true);
   await page.getByTestId('tool-select').click();
 
-  // Let time run until the first families arrive; the tutorial's last card points at the advisors.
+  // Let time run until the first families arrive; the next card explains the demand bars (M42). This
+  // player knows the rest: they skip the tutorial (M42's own e2e plays it to 1,000 residents).
   // (The step ticks itself off if the first families have already arrived while we built.)
-  await expect(page.getByTestId('tutorial')).toContainText(/Let time run|Keep the city happy/);
+  await expect(page.getByTestId('tutorial')).toContainText(/Let time run|What people want/);
   await page.getByTestId('speed-1').click();
   await page.evaluate(() => window.__game!.advance(600));
-  await expect(page.getByTestId('tutorial')).toContainText('Keep the city happy', { timeout: 30_000 });
-  await page.getByTestId('tutorial-next').click();
+  await expect(page.getByTestId('tutorial')).toContainText('What people want', { timeout: 30_000 });
+  await page.getByTestId('tutorial-skip').click();
   await expect(page.getByTestId('tutorial')).toHaveCount(0);
   await page.keyboard.press('Space');
   await page.evaluate(

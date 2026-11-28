@@ -646,6 +646,42 @@ export interface RegionReport {
    * permanent record and the winter's reach, and passes it to the others.
    */
   atom?: AtomReport;
+  /**
+   * A quick match's city (M43): its figures for the match's score (`MatchFigures`) and the tick it
+   * has reached (the room counts a report only within the match's clock). The page adds the city's
+   * state hash to its last report (`hash`).
+   */
+  match?: MatchReport;
+}
+
+export interface MatchReport {
+  tick: number;
+  treasury: number;
+  assets: number;
+  approval: number;
+  /**
+   * Added by the page, never the sim: the match's round the city was founded for, the tick it first
+   * had Race's target population, `final` on the report it sends as the match ends, with its state hash.
+   */
+  round?: number;
+  reached?: number;
+  final?: true;
+  hash?: string;
+}
+
+/** A match city's figures (M43): money, what its civic buildings are worth less its loans, approval. */
+export function matchReport(sim: Sim): MatchReport {
+  const s = sim.state;
+  let worth = 0;
+  for (const c of s.civics.values()) worth += c.cost * 0.5;
+  let owed = 0;
+  for (const l of s.economy.loans) owed += l.balance;
+  return {
+    tick: s.tick,
+    treasury: Math.round(s.treasury),
+    assets: Math.round(worth - owed),
+    approval: Math.round(s.totals.approval * 100),
+  };
 }
 
 /** Edge cells' deep water, as battles look for a sea entry, per sim and its earthworks (M37). */
@@ -726,6 +762,8 @@ export function regionReport(sim: Sim): RegionReport {
       const atom = atomReportField(sim);
       return atom ? { atom } : {};
     })(),
+    // A quick match (M43): the figures it is scored on.
+    ...(s.options.match ? { match: matchReport(sim) } : {}),
     // War (M39): a friend's vassal says what it pays its overlord (not while it rises against it).
     ...(() => {
       const d = s.war?.diplomacy;

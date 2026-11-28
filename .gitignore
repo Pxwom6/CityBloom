@@ -20,3 +20,5 @@ dist-coop
 
 # Agent worktrees (never part of the repo)
 .claude/worktrees/
+/shots
+test-results-webkit

@@ -9,6 +9,13 @@ import {
 import { loadProgress } from '../client/scenarioProgress';
 import type { ScenarioSummary } from '../sim/systems/scenario';
 import { formatMoney, useGame, useGameUpdates } from './hooks';
+import { ChallengeEnd, ChallengeFacts, weekName } from './Challenge';
+import type { Game } from '../game';
+
+/** The scenario this city plays: a weekly challenge's own definition (M44), or one of the scenarios. */
+function playedDef(game: Game, id: string): ScenarioDef | undefined {
+  return game.challengeDef ?? SCENARIO.get(id);
+}
 
 /**
  * Scenarios (M18): the scenario screen off the main menu, the brief when one begins, the goals
@@ -179,15 +186,18 @@ export function ScenarioScreen() {
 export function ScenarioBrief() {
   const game = useGameUpdates(250);
   const sc = game.world.stats.scenario;
-  const def = sc ? SCENARIO.get(sc.id) : undefined;
+  const def = sc ? playedDef(game, sc.id) : undefined;
+  const challenge = game.challengeDef;
   if (!game.scenarioBrief || !def) return null;
   return (
     <div class="modal-backdrop" data-testid="scenario-brief">
       <div class="modal panel scenario-modal">
-        <div class="milestone-kicker">Scenario</div>
+        <div class="milestone-kicker">
+          {challenge ? `This week’s challenge · ${weekName(challenge.week)}` : 'Scenario'}
+        </div>
         <h2>{def.name}</h2>
         <p>{def.brief}</p>
-        <ScenarioFacts def={def} />
+        {challenge ? <ChallengeFacts def={challenge} /> : <ScenarioFacts def={def} />}
         {def.hints.length > 0 && (
           <ul class="scenario-hints">
             {def.hints.map((h) => (
@@ -226,7 +236,7 @@ export function GoalsButton() {
     <button
       class={`stat stat-btn goals-btn ${game.panel === 'goals' ? 'active' : ''} ${sc.status}`}
       data-testid="open-goals"
-      title="Scenario goals (G)"
+      title={game.challengeDef ? 'Challenge goals and score (G)' : 'Scenario goals (G)'}
       onClick={() => game.openPanel('goals')}
     >
       <span class="city">{st.cityName}</span>
@@ -251,7 +261,7 @@ function goalProgress(g: ScenarioSummary['goals'][number]): number {
 export function GoalsPanel() {
   const game = useGameUpdates(400);
   const sc = game.world.stats.scenario;
-  const def = sc ? SCENARIO.get(sc.id) : undefined;
+  const def = sc ? playedDef(game, sc.id) : undefined;
   if (game.panel !== 'goals' || !sc || !def) return null;
   return (
     <aside class="advisors goals panel" data-testid="goals-panel">
@@ -269,6 +279,12 @@ export function GoalsPanel() {
               ? `Won in ${monthsText(sc.monthsTaken)}.`
               : 'The scenario is over; the city plays on.'}
         </p>
+        {sc.challenge && (
+          <p class="challenge-now" data-testid="goals-score">
+            {sc.challenge.final ? 'Score' : 'Score so far'}:{' '}
+            <strong>{sc.challenge.score.toLocaleString('en-US')}</strong>
+          </p>
+        )}
         <ul class="goal-list">
           {sc.goals.map((g) => (
             <li key={g.label} class={g.met ? 'met' : ''} data-testid="goal">
@@ -286,9 +302,11 @@ export function GoalsPanel() {
             </li>
           ))}
         </ul>
-        <p class="scenario-stars-rules muted">
-          ★★ {def.stars[0].label.toLowerCase()} · ★★★ {def.stars[1].label.toLowerCase()}
-        </p>
+        {!sc.challenge && (
+          <p class="scenario-stars-rules muted">
+            ★★ {def.stars[0].label.toLowerCase()} · ★★★ {def.stars[1].label.toLowerCase()}
+          </p>
+        )}
         {def.limits.length > 0 && <p class="muted">Limits: {limitsText(def.limits).join('; ')}.</p>}
       </div>
     </aside>
@@ -306,6 +324,8 @@ export function ScenarioEnd() {
   const game = useGameUpdates(250);
   const end = game.scenarioEnd;
   const sc = game.world.stats.scenario;
+  // A weekly challenge (M44) ends on a card of its own: the score, and posting it.
+  if (game.challengeDef) return <ChallengeEnd />;
   const def = sc ? SCENARIO.get(sc.id) : undefined;
   if (!end || !def) return null;
   const next = SCENARIOS[(SCENARIOS.findIndex((s) => s.id === def.id) + 1) % SCENARIOS.length]!;

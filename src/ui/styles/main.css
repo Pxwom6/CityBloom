@@ -53,6 +53,20 @@ body {
   opacity: 0;
   pointer-events: none;
 }
+/* What a first visit downloads (M49), filled in by the build; the dev server has no number. */
+.boot {
+  align-content: center;
+  gap: var(--space-2);
+  text-align: center;
+  padding: 0 var(--space-4);
+}
+.boot-size {
+  font-size: var(--font-size-sm);
+  opacity: 0.8;
+}
+.boot-size[data-size^='__'] {
+  display: none;
+}
 /* An invite link asks for a name before joining (F12). */
 .boot.asking {
   pointer-events: auto;
@@ -616,7 +630,8 @@ body {
   place-items: center start;
   /* A window too short for the menu (a phone held sideways) scrolls to its last buttons. */
   overflow-y: auto;
-  padding: var(--space-4) 0 var(--space-4) clamp(var(--space-5), 7vw, 7rem);
+  /* A gutter on the right too, so a phone's buttons and cards don't run to the edge. */
+  padding: var(--space-4) var(--space-4) var(--space-4) clamp(var(--space-5), 7vw, 7rem);
   background: linear-gradient(90deg, rgba(18, 26, 36, 0.62) 0%, rgba(18, 26, 36, 0.28) 45%, transparent 75%);
 }
 @keyframes shell-in {
@@ -762,6 +777,107 @@ body {
 }
 .pause-menu {
   width: min(21rem, 100%);
+}
+/* Report a problem, and the one sentence about crash reports (M41). */
+.learn-screen {
+  width: min(36rem, 100%);
+}
+.learn-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.learn-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+.learn-item.done {
+  border-color: var(--color-positive);
+}
+.learn-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.learn-tick {
+  color: var(--color-positive);
+}
+.learn-note {
+  color: var(--color-accent-strong);
+}
+.report-screen {
+  width: min(32rem, 100%);
+}
+.report-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.report-note {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.report-note textarea {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+.report-preview {
+  width: 100%;
+  max-height: 9rem;
+  object-fit: contain;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--color-border);
+}
+.report-lines {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+.report-lines div {
+  display: grid;
+  grid-template-columns: 9rem 1fr;
+  gap: var(--space-2);
+}
+.report-lines dt {
+  color: var(--color-text-muted);
+}
+.report-lines dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.shell-notice {
+  color: var(--color-text);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 34rem;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-sm);
+  background: var(--color-surface-strong);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: var(--shadow-sm);
+}
+.shell-notice .btn {
+  flex: none;
+  align-self: center;
 }
 .shell-actions {
   display: flex;
@@ -1036,6 +1152,168 @@ body {
 }
 .guide.tip-card {
   width: 19rem;
+}
+/* The tutorial (M42): beside the panel a step teaches, a first problem's card, its arrow. */
+.room-intro {
+  width: 24rem;
+}
+.room-intro-list {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-4);
+  font-size: var(--font-size-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.guide.beside-panel {
+  left: calc(27rem + 2 * var(--space-3));
+}
+#ui[data-width='s'] .guide.beside-panel,
+#ui[data-width='xs'] .guide.beside-panel {
+  left: var(--space-3);
+  top: auto;
+  bottom: calc(var(--toolbar-height) + var(--space-4));
+}
+#ui[data-width='xs'] .guide {
+  width: min(21rem, calc(100% - 2 * var(--space-3)));
+}
+/* A phone's card folds to one line while the player acts on it (phase 6 end), and has a Hide button. */
+.guide-fold {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 44px;
+  height: 44px;
+  border: none;
+  background: none;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-md, 1rem);
+  cursor: pointer;
+}
+.guide.guide-folded {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: auto;
+  max-width: calc(100% - 2 * var(--space-3));
+  min-height: 44px;
+  padding: var(--space-1) var(--space-3);
+  border: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.guide.guide-folded .guide-kicker {
+  margin: 0;
+  white-space: nowrap;
+}
+.guide.guide-folded strong {
+  font-size: var(--font-size-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.guide-unfold {
+  color: var(--color-text-muted);
+}
+/*
+ * Beside a sheet on a phone (phase 6 end: the Taxes card stood on the tax sliders it pointed at), the card
+ * is compact at the foot: no progress bar, no leaving or skipping (they're on the next card).
+ */
+#ui[data-phone] .guide.beside-panel .guide-progress,
+#ui[data-phone] .guide.beside-panel .guide-leave {
+  display: none;
+}
+#ui[data-phone] .guide.beside-panel {
+  padding: var(--space-2) var(--space-3);
+}
+#ui[data-phone] .guide.beside-panel h3 {
+  font-size: var(--font-size-md);
+}
+/* Upright, it stands at the top and the sheet makes room for it below. */
+#ui[data-phone][data-orient='portrait'] .guide.beside-panel {
+  top: calc(var(--topbar-height) + var(--space-2) + env(safe-area-inset-top));
+  bottom: auto;
+}
+#ui[data-phone][data-orient='portrait']:has(.guide.beside-panel) aside.panel {
+  max-height: calc(100vh - var(--topbar-height) - var(--toolbar-height) - 12.5rem);
+}
+/* A card that teaches a screen (the pause menu) stands above it, not under its dimming. */
+.guide.over-screen {
+  z-index: calc(var(--z-shell) + 1);
+}
+.guide.guide-event {
+  border-left: 4px solid var(--color-warning, #d98a00);
+}
+.guide-actions {
+  flex-wrap: wrap;
+}
+/* The main action keeps its line; leaving and skipping are small links beneath it. */
+.guide-leave {
+  display: flex;
+  gap: var(--space-2);
+  order: 2;
+  flex-basis: 100%;
+  margin-top: calc(-1 * var(--space-1));
+}
+.guide-waiting {
+  flex: 1;
+  white-space: nowrap;
+}
+.guide-actions > .btn {
+  white-space: nowrap;
+}
+.guide-actions > .btn:first-of-type {
+  margin-left: auto;
+}
+.guide-leave .btn {
+  padding-left: var(--space-1);
+  padding-right: var(--space-1);
+  font-size: var(--font-size-xs);
+}
+.guide-pointer {
+  position: fixed;
+  z-index: calc(var(--z-shell) + 2);
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  border-left: 11px solid transparent;
+  border-right: 11px solid transparent;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35));
+}
+.guide-pointer.above {
+  border-top: 16px solid rgb(255, 176, 0);
+  transform: translate(-50%, -100%);
+  animation: guide-bob-down 1s var(--ease-out) infinite;
+}
+.guide-pointer.below {
+  border-bottom: 16px solid rgb(255, 176, 0);
+  transform: translate(-50%, 0);
+  animation: guide-bob-up 1s var(--ease-out) infinite;
+}
+@keyframes guide-bob-down {
+  0%,
+  100% {
+    margin-top: -10px;
+  }
+  50% {
+    margin-top: -3px;
+  }
+}
+@keyframes guide-bob-up {
+  0%,
+  100% {
+    margin-top: 10px;
+  }
+  50% {
+    margin-top: 3px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .guide-pointer {
+    animation: none;
+  }
 }
 [data-guide] {
   position: relative;
@@ -5210,4 +5488,1380 @@ body {
 }
 .help-status.refused {
   background: var(--color-surface-sunken);
+}
+
+/*
+ * Phones (M49): `#ui[data-phone]` is a touch screen whose short side is under 600 px, upright or
+ * sideways (`data-orient`). The bottom bar is one row with names under the icons, Build and More open
+ * sheets above it, panels open as sheets from the bottom (upright) or the right (sideways) and close
+ * when their header is dragged away, everything a finger presses is at least 44 px, small text is no
+ * smaller than 12 px, and the notch and the home bar are kept clear (safe areas).
+ */
+#ui[data-phone] {
+  --font-size-xs: 0.75rem;
+  --phone-bar-height: 3.6rem;
+  --toolbar-height: calc(var(--phone-bar-height) + env(safe-area-inset-bottom));
+}
+#ui[data-phone] .topbar {
+  top: max(var(--space-1), env(safe-area-inset-top));
+  max-width: calc(100vw - 2 * var(--space-2) - env(safe-area-inset-left) - env(safe-area-inset-right));
+}
+#ui[data-phone][data-orient='landscape'] .topbar .city {
+  display: none;
+}
+#ui[data-phone] .toolbar-wrap {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  transform: none;
+  width: auto;
+  max-width: none;
+  align-items: stretch;
+  gap: 0;
+}
+#ui[data-phone] .phone-bar {
+  justify-content: space-around;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 0;
+  padding: var(--space-1) max(var(--space-1), env(safe-area-inset-right))
+    max(var(--space-1), env(safe-area-inset-bottom)) max(var(--space-1), env(safe-area-inset-left));
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  border-bottom: none;
+  max-width: none;
+}
+#ui[data-phone] .phone-bar .tip-anchor {
+  flex: 1 1 0;
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+#ui[data-phone] :is(.phone-bar, .phone-sheet) .tool-btn {
+  flex-direction: column;
+  gap: 2px;
+  min-width: 44px;
+  width: 100%;
+  height: 3.1rem;
+  min-height: 44px;
+  padding: 2px 2px;
+}
+#ui[data-phone] :is(.phone-bar, .phone-sheet) .tool-btn svg {
+  width: 1.35rem;
+  height: 1.35rem;
+}
+.phone-label {
+  display: none;
+}
+#ui[data-phone] .phone-label {
+  display: block;
+  font-size: var(--font-size-xs);
+  line-height: 1.1;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#ui[data-phone] .phone-sheet {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(4.6rem, 1fr));
+  gap: var(--space-1);
+  padding: var(--space-2) max(var(--space-2), env(safe-area-inset-right)) var(--space-2)
+    max(var(--space-2), env(safe-area-inset-left));
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  max-height: 45vh;
+  overflow-y: auto;
+}
+#ui[data-phone] .phone-sheet .tip-anchor {
+  display: flex;
+}
+#ui[data-phone] .phone-sheet .tool-btn {
+  height: 3.6rem;
+}
+#ui[data-phone] .phone-sheet .phone-label {
+  white-space: normal;
+  text-align: center;
+  font-size: var(--font-size-xs);
+}
+/* A tool's options sit above the bar, one row that scrolls sideways (zones and brushes wrap). */
+#ui[data-phone] .subbar {
+  max-width: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  border-bottom: none;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding: var(--space-2) max(var(--space-2), env(safe-area-inset-right)) var(--space-2)
+    max(var(--space-2), env(safe-area-inset-left));
+  scrollbar-width: none;
+}
+#ui[data-phone] .subbar .tip-anchor,
+#ui[data-phone] .subbar > * {
+  flex: 0 0 auto;
+}
+#ui[data-phone] .subbar .tool-btn {
+  min-height: 44px;
+}
+/* A data map's or a disaster's menu: a sheet above the bar. */
+#ui[data-phone] .maps-menu {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: var(--toolbar-height);
+  top: auto;
+  width: auto;
+  max-width: none;
+  max-height: 50vh;
+  overflow-y: auto;
+  transform: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  z-index: var(--z-panel);
+}
+/* Panels: sheets from the bottom, with a grab handle; sideways, from the right. */
+#ui[data-phone] aside.panel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: auto;
+  bottom: var(--toolbar-height);
+  width: auto;
+  max-width: none;
+  max-height: min(62vh, calc(100vh - var(--topbar-height) - var(--toolbar-height) - 1.5rem));
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding-left: max(var(--space-3), env(safe-area-inset-left));
+  padding-right: max(var(--space-3), env(safe-area-inset-right));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  transition: transform var(--duration-fast) var(--ease-out);
+  z-index: var(--z-panel);
+}
+#ui[data-phone] aside.inspector {
+  max-height: min(48vh, calc(100vh - var(--topbar-height) - var(--toolbar-height) - 1.5rem));
+}
+#ui[data-phone][data-orient='landscape'] aside.panel {
+  top: calc(var(--topbar-height) + var(--space-2) + env(safe-area-inset-top));
+  left: auto;
+  width: min(27rem, 58vw);
+  max-height: none;
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+  padding-right: max(var(--space-3), env(safe-area-inset-right));
+}
+#ui[data-phone] aside.panel > header {
+  position: relative;
+  padding-top: var(--space-3);
+  touch-action: none;
+}
+#ui[data-phone] aside.panel > header::before {
+  content: '';
+  position: absolute;
+  top: 0.3rem;
+  left: 50%;
+  width: 2.5rem;
+  height: 0.28rem;
+  margin-left: -1.25rem;
+  border-radius: 1rem;
+  background: var(--color-border-strong);
+}
+#ui[data-phone][data-orient='landscape'] aside.panel > header::before {
+  top: 50%;
+  left: 0.3rem;
+  width: 0.28rem;
+  height: 2.5rem;
+  margin: -1.25rem 0 0 0;
+}
+/* Every press is at least 44 px. */
+#ui[data-phone] :is(.btn, select, [role='tab'], .segmented button, summary) {
+  min-height: 44px;
+}
+#ui[data-phone] .btn.icon {
+  width: 44px;
+  height: 44px;
+}
+#ui[data-phone] input[type='range'] {
+  min-height: 44px;
+}
+#ui[data-phone] :is(input[type='checkbox'], input[type='radio']) {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+#ui[data-phone] label:has(> input[type='checkbox']),
+#ui[data-phone] label:has(> input[type='radio']) {
+  min-height: 44px;
+  align-items: center;
+}
+/* A tool's question waits above the bar, where the thumb is, not under the finger. */
+#ui[data-phone] .tool-question {
+  position: fixed;
+  left: max(var(--space-2), env(safe-area-inset-left)) !important;
+  right: max(var(--space-2), env(safe-area-inset-right));
+  top: auto !important;
+  bottom: calc(var(--toolbar-height) + var(--space-2));
+  max-width: none;
+  z-index: var(--z-modal);
+}
+#ui[data-phone] .tool-question .actions .btn {
+  flex: 1 1 0;
+}
+/* The residents' thoughts take room a phone hasn't got. */
+#ui[data-phone] .thoughts {
+  display: none;
+}
+/* A title's bubble, shown by a long press (touch.ts). */
+.touch-tip {
+  position: fixed;
+  z-index: var(--z-toast);
+  max-width: min(18rem, calc(100vw - 16px));
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-text);
+  color: #fff;
+  font-size: var(--font-size-sm);
+  line-height: 1.35;
+  pointer-events: none;
+  box-shadow: var(--shadow-md);
+}
+/* The top bar on a phone: the short date, no time; upright, the menu joins the first row. */
+#ui[data-phone] .topbar :is(.date-long, .stat-date .label, .divider) {
+  display: none;
+}
+#ui[data-phone] .topbar .date-short {
+  display: inline;
+}
+#ui[data-phone] .topbar {
+  gap: var(--space-2);
+  padding-left: var(--space-2);
+  padding-right: var(--space-2);
+}
+#ui[data-phone] .topbar.rows .city {
+  display: none;
+}
+#ui[data-phone] .topbar.rows .topbar-break {
+  order: 1;
+}
+#ui[data-phone] .topbar.rows .topbar-break ~ * {
+  order: 2;
+}
+#ui[data-phone] .topbar.rows .topbar-break ~ .sysmenu {
+  order: 0;
+}
+#ui[data-phone] .topbar .speed {
+  gap: 2px;
+}
+#ui[data-phone] .maps-menu {
+  flex-wrap: wrap;
+  row-gap: var(--space-3);
+}
+#ui[data-phone] .maps-group {
+  min-width: 7rem;
+  flex: 1 1 7rem;
+}
+#ui[data-phone] .maps-group :is(button, .btn) {
+  min-height: 40px;
+}
+/* A few options (zones, brushes, districts, terrain): wrap rather than scroll. */
+#ui[data-phone]
+  .subbar:is(
+    [data-testid='zone-options'],
+    [data-testid='terrain-options'],
+    [data-testid='district-options']
+  ) {
+  flex-wrap: wrap;
+  justify-content: center;
+}
+/* The suggestion to keep a backup (M49, iPhone and iPad). */
+.backup-card {
+  position: absolute;
+  top: calc(var(--topbar-height) + var(--space-5));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(26rem, calc(100vw - 2 * var(--space-3)));
+  padding: var(--space-3) var(--space-4);
+  z-index: var(--z-panel);
+  font-size: var(--font-size-sm);
+}
+.backup-card p {
+  margin: 0 0 var(--space-2);
+}
+.backup-card .actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+/* Menus and screens on a phone: the whole width, clear of the notch. */
+#ui[data-phone] .shell {
+  padding: max(var(--space-2), env(safe-area-inset-top)) max(var(--space-2), env(safe-area-inset-right))
+    max(var(--space-2), env(safe-area-inset-bottom)) max(var(--space-2), env(safe-area-inset-left));
+}
+#ui[data-phone] .shell-card {
+  width: 100%;
+  max-width: 40rem;
+  padding: var(--space-3) var(--space-4);
+}
+#ui[data-phone] .shell.menu .shell-card {
+  justify-self: stretch;
+}
+/*
+ * Phones: every press at least 44 px, small buttons, fields, the top bar's figures and the menus'
+ * items included (the rules above for narrow windows give 24 px; these come later and weigh as much).
+ */
+#ui[data-phone]
+  :is(.btn.small, .btn.small.danger, .shell-btn, .map-item, .topbar .stat-btn, .topbar .goals-btn),
+#ui[data-phone] :is(input[type='text'], input[type='number'], input[type='search'], textarea) {
+  min-height: 44px;
+}
+#ui[data-phone] .btn.small {
+  padding-left: var(--space-3);
+  padding-right: var(--space-3);
+}
+#ui[data-phone] [data-testid^='friends-color-'] {
+  min-width: 44px;
+  min-height: 44px;
+}
+/* The top bar's More menu sideways: under the bar and centred, not hung off its button. */
+#ui[data-phone] .topbar:not(.rows) .topbar-more {
+  position: static;
+}
+#ui[data-phone] .topbar:not(.rows) .topbar-panels {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 2 * var(--space-2));
+  flex-wrap: wrap;
+  justify-content: center;
+}
+/* Notices on a phone: under the top bar, out of the way of the sheets (M49); sideways, on the left. */
+#ui[data-phone] .toasts,
+#ui[data-phone] .toasts:is(.beside-panel, .beside-map) {
+  left: max(var(--space-2), env(safe-area-inset-left));
+  right: max(var(--space-2), env(safe-area-inset-right));
+  top: calc(var(--topbar-height) + var(--space-3) + env(safe-area-inset-top));
+  bottom: auto;
+  align-items: center;
+  pointer-events: none;
+}
+#ui[data-phone] .toast {
+  max-width: 100%;
+  /* A finger landing on a notice reaches the map beneath (phase 6 end: a stroke or a road begun on
+     "Achievement: Breaking ground" did nothing); notices that do something when tapped still take it. */
+  pointer-events: none;
+}
+#ui[data-phone] .toast:is(.clickable, .update-notice) {
+  pointer-events: auto;
+}
+#ui[data-phone][data-orient='landscape'] .toasts,
+#ui[data-phone][data-orient='landscape'] .toasts:is(.beside-panel, .beside-map) {
+  right: auto;
+  width: min(24rem, 40vw);
+  align-items: stretch;
+}
+
+/*
+ * Quick match (M43): the lobby card, the scoreboard along the top (timer, each city's score, the
+ * reactions), a peek at a rival, the countdowns and the results.
+ */
+.match-lobby {
+  position: absolute;
+  top: calc(var(--topbar-height) + var(--space-4));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(30rem, calc(100vw - 2rem));
+  max-height: calc(100vh - var(--topbar-height) - var(--toolbar-height) - 3rem);
+  overflow: auto;
+  padding: var(--space-4);
+  pointer-events: auto;
+  z-index: var(--z-panel);
+}
+.match-lobby header,
+.match-peek header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.match-lobby h3 {
+  margin: 0;
+}
+.match-invite {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  font-size: var(--font-size-lg);
+}
+.match-invite b {
+  letter-spacing: 0.08em;
+  user-select: all;
+}
+.match-players {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.match-players li {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.match-players li.away {
+  opacity: 0.55;
+}
+.match-players i,
+.match-chip i,
+.match-dot {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+}
+.match-dot {
+  margin-right: var(--space-1);
+}
+.match-ready {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+.match-ready.yes {
+  color: var(--color-success, var(--color-accent));
+}
+.match-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.match-hint {
+  margin: var(--space-2) 0 0;
+}
+.match-bar {
+  position: absolute;
+  top: calc(var(--topbar-height) + var(--space-2));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: calc(100vw - 2rem);
+  padding: var(--space-1) var(--space-2);
+  pointer-events: auto;
+  z-index: var(--z-panel);
+}
+.match-clock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: var(--font-size-lg);
+  line-height: 1.1;
+  min-width: 3.4rem;
+  padding: 0.1rem var(--space-1);
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+.match-clock small {
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.match-clock.last {
+  background: var(--color-warning);
+  color: #2a1e05;
+}
+.match-chips {
+  display: flex;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.match-chip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 2rem;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill, 999px);
+  background: var(--color-surface-2, transparent);
+  color: inherit;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.match-chip.me {
+  border-color: var(--color-accent);
+}
+.match-chip.out {
+  opacity: 0.5;
+}
+.match-rank {
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+.match-name {
+  max-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.match-score {
+  font-variant-numeric: tabular-nums;
+}
+.match-said {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-md);
+  font-size: var(--font-size-lg);
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: match-said 5s ease-out forwards;
+  pointer-events: none;
+}
+@keyframes match-said {
+  0%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.match-react {
+  position: relative;
+}
+.match-emotes {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  width: 12rem;
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-md);
+}
+.match-emotes .btn {
+  font-size: var(--font-size-lg);
+}
+.match-chat {
+  flex-basis: 100%;
+}
+.match-chat input {
+  width: 100%;
+}
+.match-peek {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(20rem, calc(100vw - 2rem));
+  padding: var(--space-3);
+}
+.match-peek .region-thumb {
+  width: 100%;
+  border-radius: var(--radius-md);
+}
+.match-figures {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-2) 0 0;
+}
+.match-figures dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.match-countdown {
+  position: absolute;
+  top: 38%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: clamp(4rem, 18vw, 9rem);
+  font-weight: 800;
+  color: #fff;
+  text-shadow: 0 0.2rem 1.2rem rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+  z-index: var(--z-modal);
+}
+.match-countdown.end {
+  color: var(--color-warning);
+}
+.match-results {
+  width: min(36rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+}
+.match-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+.match-table th,
+.match-table td {
+  padding: var(--space-1) var(--space-2);
+  text-align: left;
+}
+.match-table tbody tr {
+  border-top: 1px solid var(--color-border);
+}
+.match-table tr.me td {
+  font-weight: 700;
+}
+.match-chart {
+  margin: var(--space-3) 0 0;
+}
+.match-chart svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.match-axis {
+  stroke: var(--color-border);
+}
+.match-hashes {
+  margin-top: var(--space-2);
+  font-size: var(--font-size-sm);
+}
+.match-hashes code {
+  word-break: break-all;
+}
+.match-actions {
+  flex-wrap: wrap;
+  align-items: center;
+}
+/* The results' and the lobby's buttons stay in view while the card scrolls (a phone held sideways). */
+.match-results .modal-actions,
+.match-lobby .modal-actions {
+  --pad: var(--space-5);
+  position: sticky;
+  bottom: calc(-1 * var(--pad));
+  margin-bottom: calc(-1 * var(--pad));
+  padding: var(--space-2) 0 var(--pad);
+  background: var(--color-surface-strong);
+}
+.match-lobby .modal-actions {
+  --pad: var(--space-4);
+}
+.match-kept {
+  margin: var(--space-2) 0 0;
+}
+/* On a phone the scoreboard runs the width of the screen, its cities scrolling sideways between the
+   timer and the reactions; the last minute's banner and the notices sit below it. */
+#ui[data-phone] .match-bar {
+  top: calc(var(--topbar-height) + var(--space-1) + env(safe-area-inset-top));
+  left: max(var(--space-2), env(safe-area-inset-left));
+  right: max(var(--space-2), env(safe-area-inset-right));
+  transform: none;
+  max-width: none;
+  flex-wrap: nowrap;
+}
+#ui[data-phone][data-orient='landscape'] .match-bar {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  max-width: min(44rem, calc(100vw - 1rem));
+}
+#ui[data-phone] .match-chips {
+  flex: 1;
+  min-width: 0;
+}
+#ui[data-phone] .match-clock {
+  min-width: 3rem;
+}
+#ui[data-phone] .match-peek {
+  left: 0;
+  right: 0;
+  transform: none;
+  width: auto;
+  max-height: calc(100vh - var(--topbar-height) - var(--toolbar-height) - 6rem);
+  overflow: auto;
+}
+#ui[data-phone]:has(.match-bar) .toasts {
+  top: calc(var(--topbar-height) + 4.6rem + env(safe-area-inset-top));
+}
+#ui[data-phone] .match-table td:nth-child(2) {
+  white-space: nowrap;
+}
+#ui[data-phone] .match-chip,
+#ui[data-phone] .match-react .btn {
+  min-height: 44px;
+}
+#ui[data-phone] .match-name {
+  max-width: 5rem;
+}
+/* Upright, a city is its colour on the scoreboard (its name is in the peek): four fit across. */
+#ui[data-phone][data-orient='portrait'] .match-name {
+  display: none;
+}
+/* (Phase 6 end: with four cities the fourth ran off an iPhone's scoreboard. The chips are in order, so
+   their rank numbers go; the chips and the clock tighten.) */
+#ui[data-phone][data-orient='portrait'] .match-bar {
+  gap: var(--space-1);
+  padding: 2px var(--space-1);
+}
+#ui[data-phone][data-orient='portrait'] .match-rank {
+  display: none;
+}
+#ui[data-phone][data-orient='portrait'] .match-chips {
+  gap: 3px;
+}
+#ui[data-phone][data-orient='portrait'] .match-chip {
+  gap: 0.25rem;
+  padding: 0 0.4rem;
+}
+#ui[data-phone][data-orient='portrait'] .match-clock {
+  min-width: 0;
+  font-size: var(--font-size-md);
+  padding: 0.1rem 0.3rem;
+}
+#ui[data-phone][data-orient='portrait'] .match-clock small {
+  font-size: 0.5rem;
+}
+#ui[data-phone] .match-lobby {
+  top: calc(var(--topbar-height) + var(--space-2));
+  width: calc(100vw - 1rem);
+  max-height: calc(100vh - var(--topbar-height) - var(--toolbar-height) - 1.5rem);
+}
+#ui[data-phone][data-orient='landscape'] .match-lobby {
+  width: min(30rem, calc(100vw - 1rem));
+}
+#ui[data-phone] .match-results .btn,
+#ui[data-phone] .match-lobby .btn,
+#ui[data-phone] .match-lobby .segmented button,
+#ui[data-phone] .match-peek .btn,
+#ui[data-phone] .match-next-mode,
+#ui[data-phone] .match-chat input {
+  min-height: 44px;
+}
+#ui[data-phone] .match-emotes {
+  width: 15rem;
+}
+#ui[data-phone] .match-emotes .btn {
+  min-width: 44px;
+  min-height: 44px;
+}
+#ui[data-phone] .match-hashes summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+#ui[data-phone] .match-table {
+  font-size: var(--font-size-xs, 0.75rem);
+}
+#ui[data-phone] .match-table th:nth-child(6),
+#ui[data-phone] .match-table td:nth-child(6) {
+  display: none;
+}
+
+/* The weekly challenge (M44): its screen and board, the end card, and the bar while watching a run. */
+.challenge-btn small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.challenge-screen {
+  width: min(56rem, 100%);
+}
+/* The card scrolls as a whole (its parts never squeeze under the footer). */
+.challenge-screen > * {
+  flex-shrink: 0;
+}
+.challenge-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-4);
+  min-height: 0;
+}
+#ui[data-width='s'] .challenge-body,
+#ui[data-width='xs'] .challenge-body,
+#ui[data-phone] .challenge-body {
+  grid-template-columns: 1fr;
+}
+.challenge-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+}
+.challenge-detail p {
+  margin: 0 0 var(--space-2);
+}
+.challenge-detail .scenario-name {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--color-text);
+}
+.challenge-pin {
+  font-size: var(--font-size-sm);
+  color: var(--color-accent-strong);
+}
+.challenge-score-rules {
+  font-size: var(--font-size-xs);
+}
+.challenge-best {
+  font-weight: var(--font-weight-medium);
+}
+.challenge-board {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--font-size-sm);
+}
+.challenge-tabs {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+.challenge-tabs .btn {
+  flex: 1;
+}
+.challenge-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.challenge-groups p {
+  margin: 0;
+}
+.challenge-group-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.challenge-group-actions {
+  gap: var(--space-2);
+}
+.challenge-group-actions input {
+  text-transform: uppercase;
+}
+.challenge-group-actions input::placeholder {
+  text-transform: none;
+}
+.slot-tag {
+  color: var(--color-accent-strong);
+  font-weight: var(--font-weight-medium);
+}
+.challenge-made strong {
+  font-family: var(--font-mono, monospace);
+  letter-spacing: 0.08em;
+}
+.challenge-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 22rem;
+  overflow: auto;
+}
+.challenge-row {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) auto 1.2rem auto;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+.challenge-rank {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-muted);
+  text-align: right;
+}
+.challenge-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.challenge-score {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-bold);
+}
+.challenge-check {
+  color: var(--color-positive);
+  text-align: center;
+}
+.challenge-final {
+  margin: var(--space-2) 0;
+  font-size: 2.4rem;
+  font-weight: var(--font-weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+.challenge-final small {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-muted);
+}
+.challenge-post {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+}
+.challenge-post p {
+  margin: 0;
+}
+.challenge-now {
+  margin: 0;
+}
+.run-viewer {
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.run-viewer-bar {
+  width: 8rem;
+  margin: 0;
+}
+#ui[data-phone] .run-viewer {
+  bottom: calc(var(--space-2) + env(safe-area-inset-bottom));
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+}
+
+/* The timelapse (M45): its line in City history, and Make timelapse's card. */
+.timelapse-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+.timelapse-section .note {
+  margin: 0;
+}
+.timelapse-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.timelapse-line .muted {
+  flex: 1;
+  min-width: 10rem;
+  font-size: var(--font-size-sm);
+}
+.timelapse-modal {
+  width: min(34rem, 100%);
+  max-height: calc(100% - var(--space-4));
+  overflow: auto;
+}
+.timelapse-choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: var(--space-2) 0;
+}
+.timelapse-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.timelapse-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+}
+.timelapse-video {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-md);
+  background: #000;
+}
+.timelapse-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* My buildings (M46). */
+.buildings-panel {
+  width: 27rem;
+}
+.buildings-panel.dragging {
+  outline: 2px dashed var(--color-accent);
+  outline-offset: -6px;
+}
+.buildings-add {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-2);
+}
+.buildings-add .muted {
+  flex: 1;
+  min-width: 12rem;
+}
+.buildings-import {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+}
+.buildings-import h3 {
+  margin: 0;
+}
+.buildings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.buildings-field input,
+.buildings-field select,
+.buildings-field textarea {
+  width: 100%;
+}
+.buildings-field textarea:not(.workshop-prompt) {
+  font: inherit;
+}
+.buildings-refused {
+  margin: 0;
+  font-weight: 600;
+}
+.buildings-problems {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--color-negative);
+}
+.buildings-problems li + li {
+  margin-top: 2px;
+}
+.buildings-picture {
+  width: 100%;
+  border-radius: var(--radius-sm);
+  background: #f6f4ee;
+}
+.buildings-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.buildings-preview canvas {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  /* A phone keeps the list in reach below it (M49's sheets). */
+  max-height: 34vh;
+  border-radius: var(--radius-md);
+  background: #bcd8f0;
+  display: block;
+}
+.buildings-looks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  align-items: center;
+}
+.buildings-looks .sep {
+  width: var(--space-2);
+}
+.buildings-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.buildings-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+}
+.buildings-row.active {
+  border-color: var(--color-border-strong);
+}
+.buildings-row-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.buildings-name {
+  font-weight: 600;
+}
+.buildings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.buildings-note {
+  margin: 0;
+}
+.buildings-setting {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+.inspector-look label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-4) var(--space-2);
+}
+.inspector-look select {
+  flex: 1;
+}
+.inspector-look p {
+  margin: 0;
+  padding: 0 var(--space-4) var(--space-2);
+}
+
+/* The Workshop (M47). */
+.buildings-tabs {
+  padding: 0 var(--space-4) var(--space-2);
+}
+.workshop-tabs {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+.workshop {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.workshop-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+.workshop-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface-strong);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+.workshop-step:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.workshop-step.active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+.workshop-step.done .workshop-step-n {
+  color: var(--color-positive);
+}
+.workshop-step-n {
+  font-weight: 700;
+}
+.workshop-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.workshop-body p {
+  margin: 0;
+}
+.workshop-choices {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+.workshop-site {
+  width: 100%;
+  aspect-ratio: 64 / 30;
+  border-radius: var(--radius-sm);
+  display: block;
+}
+.workshop-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px var(--space-3);
+  margin: 0;
+}
+.workshop-facts dt {
+  color: var(--color-text-muted);
+}
+.workshop-facts dd {
+  margin: 0;
+  font-weight: 600;
+}
+.workshop-howto,
+.workshop-blender {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.workshop-blender li {
+  overflow: hidden;
+}
+.workshop-pic {
+  float: right;
+  width: 9rem;
+  margin: 0 0 var(--space-1) var(--space-2);
+}
+.workshop-prompt {
+  width: 100%;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  resize: vertical;
+}
+.workshop-check.dragging {
+  outline: 2px dashed var(--color-accent);
+  outline-offset: 4px;
+  border-radius: var(--radius-sm);
+}
+.workshop-ok {
+  color: var(--color-positive);
+  font-weight: 600;
+}
+.workshop-notes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.workshop-note {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+  border-left: 3px solid var(--color-warning);
+}
+.workshop-note h4 {
+  margin: 0 0 2px;
+}
+.workshop-note ul {
+  margin: 4px 0;
+  padding-left: 1.1rem;
+}
+.workshop-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+}
+.workshop-guide {
+  font-size: var(--font-size-sm);
+}
+.workshop-use {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+#ui[data-phone] .workshop-step {
+  min-height: 44px;
+}
+#ui[data-phone] .workshop-pic {
+  float: none;
+  display: block;
+  margin: var(--space-1) 0;
+}
+
+/* Send it in (M48). */
+.submit-screen {
+  width: min(38rem, 100%);
+  max-height: calc(100% - var(--space-4));
+  overflow: auto;
+}
+.submit-form,
+.submit-review {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+}
+.submit-review h3 {
+  margin: 0;
+}
+.submit-text {
+  white-space: pre-wrap;
+}
+.submit-who {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+}
+.submit-list {
+  list-style: none;
+  margin: var(--space-2) 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.submit-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+}
+.submit-status {
+  font-weight: 600;
+}
+.submit-row.accepted .submit-status {
+  color: var(--color-positive);
+}
+.submit-row.declined .submit-status {
+  color: var(--color-text-muted);
+}
+.submit-reply {
+  flex-basis: 100%;
+  margin: 0;
+  font-style: italic;
 }

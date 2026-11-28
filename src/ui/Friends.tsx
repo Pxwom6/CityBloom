@@ -21,7 +21,7 @@ import {
 import type { Game } from '../game';
 import { PERMISSIONS, permsOf, type Permission } from '../sim/rules';
 
-function ProfileFields(props: { profile: Profile; onChange: (p: Profile) => void }) {
+export function ProfileFields(props: { profile: Profile; onChange: (p: Profile) => void }) {
   const { profile, onChange } = props;
   return (
     <div class="friends-profile">
@@ -331,6 +331,9 @@ export function RoomPanel() {
         </button>
       </header>
       <div class="advisors-list">
+        <button class="btn small" data-testid="room-intro-open" onClick={() => game.openRoomIntro()}>
+          How rooms work
+        </button>
         <p class="muted">
           {mp.kind === 'online'
             ? 'An online room: the city waits here between sessions, and friends can join any time with the code.'
@@ -456,6 +459,18 @@ export function RoomPanel() {
                   s.setSpendLimit(v === '' ? null : Math.max(0, Math.round(Number(v))));
                 }}
               />
+            </label>
+            <label
+              class="check"
+              title="Buildings players made themselves (My buildings): off, nothing new may wear one and everyone sees the game's own"
+            >
+              <input
+                type="checkbox"
+                checked={room.rules.customBuildings !== false}
+                data-testid="room-custom-toggle"
+                onChange={(e) => s.setCustomBuildings((e.target as HTMLInputElement).checked)}
+              />
+              <span>Custom buildings</span>
             </label>
           </div>
         )}

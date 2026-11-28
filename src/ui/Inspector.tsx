@@ -2,6 +2,7 @@ import { MilitarySection } from './Military';
 import { snowFactor } from '../data/climate';
 import { ROAD_TYPES, isRail } from '../data/roads';
 import { CIVIC } from '../data/civic';
+import { LookChooser } from './MyBuildings';
 import { TRAM, TRANSIT } from '../data/balance';
 import { compass } from '../tools/roadTool';
 import type { Command } from '../sim/commands';
@@ -10,6 +11,7 @@ import { MODULE, modulesFor } from '../data/modules';
 import { DENSITY_NAMES, INDUSTRY_TIER_NAMES, WEALTH_NAMES, ZONED_DEFS } from '../data/buildings';
 import type { BuildingDetails, CivicDetails } from '../sim/protocol';
 import { formatNumber, useGame, useGameUpdates } from './hooks';
+import type { Game } from '../game';
 import { PLAYER_COLORS } from '../../relay/protocol';
 import { modKey } from '../client/platform';
 import { moveFee } from '../sim/world/civic';
@@ -672,6 +674,12 @@ function BuiltBy({ id }: { id: number }) {
   );
 }
 
+/** A building wearing a player's own model (M46) goes by the model's name, when it's drawn. */
+function ownName(game: Game, id: number): string | null {
+  const c = game.world.civics.get(id);
+  return c?.look && game.customModel(c.look, c.def) ? (game.buildings.get(c.look)?.name ?? null) : null;
+}
+
 function CivicInspector({ id }: { id: number }) {
   const game = useGameUpdates(200);
   const [d, setD] = useState<CivicDetails | null>(null);
@@ -692,7 +700,8 @@ function CivicInspector({ id }: { id: number }) {
     <aside class="inspector panel" data-testid="inspector">
       <header>
         <div>
-          <h2>{d.name}</h2>
+          <h2 data-testid="inspector-name">{ownName(game, d.id) ?? d.name}</h2>
+          {ownName(game, d.id) && <div class="sub">{d.name}</div>}
           <div class="sub address">
             {(() => {
               const c = game.world.civics.get(d.id);
@@ -964,6 +973,7 @@ function CivicInspector({ id }: { id: number }) {
         </dd>
       </dl>
       {d.military && <MilitarySection civicId={d.id} m={d.military} />}
+      <LookChooser civicId={d.id} def={d.def} />
       <ModuleList civicId={d.id} def={d.def} />
       {/* The regional rail link stays put: it belongs to the regional railway (Phase 2 review). */}
       {!d.railLink && (

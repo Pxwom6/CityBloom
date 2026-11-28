@@ -83,9 +83,9 @@ export default tseslint.config(
     languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
   {
-    // The service worker template; the build fills in __FILES__ (scripts/vite-pwa.ts).
+    // The service worker template; the build fills in __FILES__ and __EXTRAS__ (scripts/vite-pwa.ts).
     files: ['src/pwa/sw.js'],
-    languageOptions: { globals: { ...globals.serviceworker, __FILES__: 'readonly' } },
+    languageOptions: { globals: { ...globals.serviceworker, __FILES__: 'readonly', __EXTRAS__: 'readonly' } },
   },
   {
     rules: {

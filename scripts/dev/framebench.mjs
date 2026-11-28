@@ -2,7 +2,7 @@
 // with the frame cap off (vsync and the frame-rate limit disabled, so it draws as fast as it can),
 // then time every frame in each view at each quality level. Needs a real GPU (the owner's Mac).
 // Usage: npm run build:test && node scripts/dev/framebench.mjs city.gz [--out file.json]
-//          [--quality high,medium,low] [--views overview,city,street,overview@night,…,heavy]
+//          [--quality high,medium,low,phone] [--views overview,city,street,overview@night,…,heavy]
 //          [--seconds 6] [--warm 3] [--settle 8] [--shots dir] [--label name] [--profile]
 //          [--dist dist-test] [--init "js run in the page before timing"]
 // `--profile` also samples the main thread during each view and prints the costliest functions.
@@ -50,6 +50,7 @@ mkdirSync(dirname(out), { recursive: true });
 
 // As GRAPHICS_PRESETS in src/client/graphicsCheck.ts.
 const PRESETS = {
+  phone: { quality: 'phone', shadows: false, drawDistance: 'near', fpsCap: 0 },
   low: { quality: 'low', shadows: false, drawDistance: 'near' },
   medium: { quality: 'medium', shadows: true, drawDistance: 'medium' },
   high: { quality: 'high', shadows: true, drawDistance: 'medium' },

@@ -53,6 +53,21 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy -c relay/wrangler.jsonc
+      # The owner area's key (M41): passed to the Worker as a secret once the repository has the
+      # secret OWNER_KEY (PROGRESS.md says how to make it); without it the owner area says it isn't
+      # set up, and everything players see works as normal. Read from stdin, never echoed.
+      - if: steps.check.outputs.ready == 'yes'
+        name: Owner key
+        env:
+          OWNER_KEY: ${{ secrets.OWNER_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -n "$OWNER_KEY" ]; then
+            printf '%s' "$OWNER_KEY" | npx -y wrangler@4 secret put OWNER_KEY -c relay/wrangler.jsonc
+          else
+            echo "No OWNER_KEY secret: the owner area stays switched off."
+          fi
       - id: address
         if: steps.check.outputs.ready == 'yes'
         env:

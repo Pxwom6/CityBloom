@@ -1,4 +1,5 @@
-import type { ZoneLetter } from '../data/zones';
+import { CELL, ROWS, type ZoneLetter } from '../data/zones';
+import { roadHalfWidth } from '../data/roads';
 import type { Vec2 } from '../sim/geom';
 import type { Game } from '../game';
 import type { CommandResult } from '../sim/commands';
@@ -13,6 +14,21 @@ const BRUSH_COLOURS: Record<ZoneLetter | 'none', string> = {
 let strokeCounter = 1;
 
 /**
+ * Where a brush point's front row is (phase 6 end): lots grow only from the row of cells against the
+ * kerb, so a stroke painted a little way off a road (as a finger does, beside the street rather than on
+ * it) zoned the rows behind and left paint that never grew. For a point `d` metres from a road's centre
+ * line (nearest at `at`) whose brush reaches that road's rows but not its front row, the front row's
+ * centre in line with the point; otherwise null.
+ */
+export function kerbPoint(p: Vec2, radius: number, at: Vec2, d: number, halfWidth: number): Vec2 | null {
+  const front = halfWidth + CELL / 2;
+  const back = halfWidth + (ROWS - 0.5) * CELL;
+  if (d - radius <= front || d - radius > back || d <= 0) return null;
+  const k = front / d;
+  return { x: at.x + (p.x - at.x) * k, z: at.z + (p.z - at.z) * k };
+}
+
+/**
  * Zone painting with a round brush along the drag path; shift-click fills both sides of a road.
  * Only empty, valid cells change. Each drag is one undo step.
  */
@@ -23,6 +39,8 @@ export class ZoneTool implements Tool {
   radius = 24;
   private painting = false;
   private last: Vec2 | null = null;
+  /** The last front-row point painted in this stroke, and the road it was in front of. */
+  private lastKerb: { seg: number; p: Vec2 } | null = null;
   private stroke = 0;
   /** The stroke whose refusal has been shown (a drag paints every few metres: say it once). */
   private told = 0;
@@ -31,11 +49,14 @@ export class ZoneTool implements Tool {
 
   activate(): void {
     this.game.renderer.zones.setGridVisible(true);
+    // Zone paint shows while painting, over a data map too (see `OverlayController.set`).
+    this.game.renderer.zones.group.visible = true;
   }
 
   deactivate(): void {
     this.painting = false;
     this.game.renderer.zones.setGridVisible(false);
+    this.game.renderer.zones.group.visible = !this.game.overlay.active;
     this.game.renderer.ghost.showBrush(null, 1);
     this.game.setHint(null);
   }
@@ -56,6 +77,31 @@ export class ZoneTool implements Tool {
         stroke,
       })
       .then((r) => this.report(r, stroke));
+    if (this.zone !== 'none') this.paintKerb(points[points.length - 1]!, stroke);
+  }
+
+  /** The front row in front of a brush point that doesn't reach it (`kerbPoint`), in the same stroke. */
+  private paintKerb(p: Vec2, stroke: number): void {
+    const w = this.game.world;
+    const hit = w.net.nearestSegment(p, this.radius + ROWS * CELL + 12, (id) => {
+      const s = w.netState.segments.get(id);
+      return !!s && (!!s.left || !!s.right);
+    });
+    const seg = hit ? w.netState.segments.get(hit.seg) : undefined;
+    const q = hit && seg ? kerbPoint(p, this.radius, hit, hit.d, roadHalfWidth(seg.type)) : null;
+    if (!hit || !q) {
+      this.lastKerb = null;
+      return;
+    }
+    // Along the same road, a line between the points; round a corner, the point alone.
+    const points = this.lastKerb?.seg === hit.seg ? [this.lastKerb.p, q] : [q];
+    this.lastKerb = { seg: hit.seg, p: q };
+    void this.game.dispatch({
+      type: 'zone',
+      zone: this.zone,
+      area: { kind: 'brush', points, radius: CELL / 2 + 1 },
+      stroke,
+    });
   }
 
   /**
@@ -84,6 +130,7 @@ export class ZoneTool implements Tool {
       return;
     }
     this.painting = true;
+    this.lastKerb = null;
     this.stroke = strokeCounter++;
     this.last = { x: p.ground.x, z: p.ground.z };
     this.paint([this.last]);

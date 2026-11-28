@@ -19,7 +19,7 @@ import { CIVIC } from '../data/civic';
 import { CELL } from '../data/zones';
 import { hourOfDay } from '../sim/time';
 import { windAngle } from '../sim/systems/pollution';
-import { CameraController } from './camera';
+import { CameraController, type CameraPose } from './camera';
 import { Lighting } from './lighting';
 import { TerrainRenderer } from './terrain';
 import { TreeRenderer, lotTree, type Placement } from './trees';
@@ -453,7 +453,7 @@ export class GameRenderer {
         const n = world.netState.nodes.get(id);
         if (n) pts.push(n);
       }
-      if (pts.length) this.trees.rebuildAround(pts);
+      if (pts.length) this.trees.rebuildAround(pts, true);
     });
     // Earthworks (M13): everything laid on the ground follows it.
     world.onTerrain((box) => {
@@ -466,6 +466,21 @@ export class GameRenderer {
     this.controller = new CameraController(this.camera, canvas, (x, z) => world.heightAt(x, z));
     this.resize();
     window.addEventListener('resize', () => this.resize());
+    // A phone may take the GPU's context away under memory pressure (M49). three.js brings back what
+    // it still holds; the meshes whose arrays were let go after upload (release.ts) are built again.
+    canvas.addEventListener('webglcontextrestored', () => this.redrawReleased());
+  }
+
+  /** Times the GPU's context came back (M49; tests). */
+  contextRestores = 0;
+
+  /** Build again every mesh whose arrays were let go once uploaded (the context came back, M49). */
+  redrawReleased(): void {
+    this.contextRestores++;
+    this.buildings.redrawAll();
+    this.civics.chunks.reset();
+    this.roads.redrawAll();
+    this.shadowAt = -1;
   }
 
   /** Car, zoned or civic building under a screen position. */
@@ -530,9 +545,27 @@ export class GameRenderer {
     return this.world.buildingAt(x, z, 1) !== null;
   }
 
+  /** The quality's pixel ratio and its cap on the drawing buffer's pixels (M49). */
+  private wantedRatio = 1;
+  private maxPixels = Infinity;
+
+  /** The pixel ratio to draw at: the quality's, at most the screen's, within `maxPixels`. */
+  private pixelRatioNow(): number {
+    // A photo being saved at a few times the screen's resolution (M16) keeps its own while it's drawn.
+    if (this.captureRatio !== null) return this.captureRatio;
+    const w = this.canvas.clientWidth || window.innerWidth;
+    const h = this.canvas.clientHeight || window.innerHeight;
+    const cap = Number.isFinite(this.maxPixels) ? Math.sqrt(this.maxPixels / Math.max(1, w * h)) : Infinity;
+    // Rounded so a resize by a pixel or two doesn't rebuild the post targets.
+    return Math.round(Math.min(window.devicePixelRatio || 1, this.wantedRatio, cap) * 100) / 100;
+  }
+
   resize(): void {
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
+    // Turning a phone changes nothing in pixels, but a tablet's window may grow past the cap.
+    const ratio = this.pixelRatioNow();
+    if (this.renderer.getPixelRatio() !== ratio) this.renderer.setPixelRatio(ratio);
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
@@ -543,10 +576,9 @@ export class GameRenderer {
     this.buildings.flushAll();
     this.civics.update(this.camera.position, this.buildings.range, true);
     // Garden trees of buildings just built, too (normally planted within half a second).
-    if (this.treePoints.length) {
-      this.trees.rebuildAround(this.treePoints);
-      this.treePoints = [];
-    }
+    if (this.treePoints.length) this.trees.rebuildAround(this.treePoints);
+    this.treePoints = [];
+    this.trees.flushPending();
   }
 
   setShadows(on: boolean): void {
@@ -558,6 +590,12 @@ export class GameRenderer {
   /** Graphics settings: resolution, shadows and their detail, draw distance, crowd sizes. */
   applyGraphics(g: {
     pixelRatio: number;
+    maxPixels: number;
+    trees: number;
+    water: 0 | 1;
+    effects: number;
+    lodGap: number;
+    lodDistance: number;
     shadows: boolean;
     shadowMap: number;
     fogScale: number;
@@ -573,11 +611,26 @@ export class GameRenderer {
     this.groundDetail = g.ground;
     this.lighting.shadow.splitRatio = g.cascades === 2 ? 2.2 : Infinity;
     this.post.settings = { ...(this.postOverride ?? g.post) };
-    const ratio = Math.min(window.devicePixelRatio || 1, g.pixelRatio);
+    this.wantedRatio = g.pixelRatio;
+    this.maxPixels = g.maxPixels;
+    const ratio = this.pixelRatioNow();
     if (this.renderer.getPixelRatio() !== ratio) {
       this.renderer.setPixelRatio(ratio);
       this.resize();
     }
+    // Phone (M49): half the trees, one gentle swell on the water, fewer smoke puffs, stale chunks
+    // built again less often.
+    if (this.trees.density !== g.trees) {
+      this.trees.density = g.trees;
+      this.trees.rebuildAll();
+    }
+    this.water.simple = g.water === 0;
+    this.effects.scale = g.effects;
+    this.buildings.chunks.gapScale = g.lodGap;
+    // A slow device builds stale chunks and tree regions a few times a second, not every frame.
+    this.buildings.chunks.staleEvery = g.lodGap > 1 ? 200 : 0;
+    this.trees.regionsAFrame = g.lodGap > 1 ? 1 : 2;
+    this.buildings.siteEvery = g.lodGap > 1 ? 250 : 0;
     this.setShadows(g.shadows);
     const shadow = this.lighting.shadow;
     if (shadow.mapSize.x !== g.shadowMap) {
@@ -588,7 +641,7 @@ export class GameRenderer {
     }
     this.fogScale = g.fogScale;
     // Coarser pixels show less: the levels of detail hand over sooner (High at 2× is the full range).
-    this.buildings.lodScale = Math.max(0.45, Math.pow(ratio / 2, 0.7));
+    this.buildings.lodScale = Math.max(0.45, Math.pow(ratio / 2, 0.7)) * g.lodDistance;
     this.trees.lodDistance = g.treeDetail;
     this.pedestrians.crowd = g.crowd;
     this.weather.drops = Math.round(9000 * g.crowd);
@@ -646,17 +699,71 @@ export class GameRenderer {
     // Up to `scale` × the screen's pixels, within what the GPU can hold (and ~36 MP).
     let ratio = (window.devicePixelRatio || 1) * scale;
     ratio = Math.min(ratio, maxSide / Math.max(w, h), Math.sqrt(36e6 / (w * h)));
+    // (`resize` keeps the phone preset's cap on the pixel ratio since M49: the photo's ratio holds over it.)
+    this.captureRatio = ratio;
     this.renderer.setPixelRatio(ratio);
     this.resize();
     this.frame(0);
     const size = this.renderer.getDrawingBufferSize(new Vector2());
     // toBlob copies the canvas as it is now, so the size can go back straight away.
     const blob = new Promise<Blob | null>((res) => this.canvas.toBlob(res, 'image/png'));
+    this.captureRatio = null;
     this.renderer.setPixelRatio(prev);
     this.resize();
     return { blob, width: size.x, height: size.y };
   }
 
+  /**
+   * One frame from another camera, for the timelapse (M45): drawn through the ordinary pipeline from
+   * `pose` at the frame's own shape (`w` × `h`, whatever the screen's), with the interface's marks
+   * hidden as photo mode hides them, copied into `into`, and the player's camera put back before the
+   * frame they see is drawn. Nothing is resized (the post pipeline's targets stay as they are).
+   */
+  captureView(
+    pose: CameraPose,
+    into: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+    w: number,
+    h: number,
+    hour: number | null = null,
+  ): void {
+    const c = this.controller;
+    const goal = { ...c.goal };
+    const current = { ...c.current };
+    const hide = new Set(['icons', 'ghost', 'routeTint', 'coverageMap', 'zones']);
+    const was = this.scene.children
+      .filter((k) => hide.has(k.name) || k === this.presence.group)
+      .map((k) => [k, k.visible] as const);
+    for (const [k] of was) k.visible = false;
+    const overlay = this.terrain.uniforms.uOverlayOn.value;
+    this.terrain.uniforms.uOverlayOn.value = 0;
+    const aspect = this.camera.aspect;
+    this.hourOverride = hour;
+    try {
+      c.setPose(pose, true);
+      // Drawn at the frame's shape across the whole canvas, then copied at that shape: on a phone held
+      // upright the picture is squeezed into the canvas and comes out right in the copy.
+      this.camera.aspect = w / h;
+      this.camera.updateProjectionMatrix();
+      // Shadows fitted to this view (and again to the player's on their next frame).
+      this.shadowAt = -Infinity;
+      this.frame(0);
+      into.drawImage(this.canvas, 0, 0, this.canvas.width, this.canvas.height, 0, 0, w, h);
+    } finally {
+      Object.assign(c.goal, goal);
+      Object.assign(c.current, current);
+      this.hourOverride = null;
+      this.shadowAt = -Infinity;
+      this.camera.aspect = aspect;
+      this.camera.updateProjectionMatrix();
+      for (const [k, v] of was) k.visible = v;
+      this.terrain.uniforms.uOverlayOn.value = overlay;
+    }
+  }
+
+  /** A photo's pixel ratio while it is drawn (M16), over the screen's capped one. */
+  private captureRatio: number | null = null;
+  /** An hour to light the frame at instead of the city's (the timelapse's frames are all by day). */
+  private hourOverride: number | null = null;
   /** When the shadow maps were last drawn (s of frame time). */
   private shadowAt = -1;
   /** Seconds between shadow map redraws close up (0: every frame; the graphics quality's). */
@@ -688,7 +795,9 @@ export class GameRenderer {
     this.controller.update(dt);
     // Data maps are read in flat daylight, whatever the time; photo mode can pick its own hour.
     const hour =
-      this.terrain.uniforms.uOverlayOn.value > 0.5 ? 13 : (p?.hour ?? hourOfDay(this.world.displayTick));
+      this.terrain.uniforms.uOverlayOn.value > 0.5
+        ? 13
+        : (p?.hour ?? this.hourOverride ?? hourOfDay(this.world.displayTick));
     const l = this.lighting;
     const bufH0 = this.renderer.getDrawingBufferSize(this.tmpSize).y;
     const pxm = bufH0 / (2 * Math.tan((this.camera.fov * Math.PI) / 360));

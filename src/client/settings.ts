@@ -5,7 +5,8 @@
 import type { WeatherIntensity } from '../data/climate';
 import type { UnitQuality } from '../render/units';
 
-export type Quality = 'low' | 'medium' | 'high';
+/** Graphics quality; `phone` (M49) is below Low: lighter, for phones and small tablets. */
+export type Quality = 'phone' | 'low' | 'medium' | 'high';
 export type DrawDistance = 'near' | 'medium' | 'far';
 /** How wheel input is read (M14): detected automatically, or fixed to a mouse or a trackpad. */
 export type PointerDevice = 'auto' | 'mouse' | 'trackpad';
@@ -44,6 +45,14 @@ export interface Settings {
   seenTips: string[];
   /** Step of the running tutorial, or -1 when none is running. */
   tutorialStep: number;
+  /** The tutorial was left for now (M42): its card is hidden until "Continue the tutorial". */
+  tutorialAway: boolean;
+  /** The first-problem lessons already shown (M42: a fire, a power cut, a jam), each once. */
+  tutorialSeen: string[];
+  /** The card a player joining a friend's room sees the first time has been read (M42). */
+  roomIntro: boolean;
+  /** Learn's lessons played to the end (M42). */
+  lessonsDone: string[];
   /**
    * Tone down the atom bomb's flash (M40 step 11): a short fade in place of the white-out, and no shake.
    * Its default follows the system's "reduce motion" setting. Read by the effects (`src/render/atom.ts`).
@@ -53,7 +62,36 @@ export interface Settings {
   graphicsChecked: boolean;
   /** The preset that check picked for this device, if it ran. */
   autoGraphics: Quality | null;
+  /**
+   * Send crash reports (M41): errors, failed saves and desyncs go to the game's maker, without names,
+   * chat, cities or anything typed. On unless the player turns it off.
+   */
+  crashReports: boolean;
+  /** The one sentence saying what crash reports send and where the switch is has been shown. */
+  reportsNotice: boolean;
+  /** Record a timelapse of each city as it plays (M45): small frames kept on this device. On by default. */
+  timelapse: boolean;
+  /** Draw friends' own buildings (M46): off, a friend's custom building shows as the game's own. */
+  showFriendsBuildings: boolean;
+  /**
+   * The most frames a second drawn (M49): 0 as many as the screen shows, else 30 or 60. The
+   * first-launch check sets 30 on a phone.
+   */
+  fpsCap: FpsCap;
+  /**
+   * Battery saver (M49): at most 30 frames a second, a lower resolution, and still scenes drawn
+   * even less often.
+   */
+  batterySaver: boolean;
+  /**
+   * When a city was last exported, or the suggestion to back up was last answered (ms since 1970;
+   * M49: an iPhone is asked now and then, as Safari may clear a site's storage).
+   */
+  backupAt: number;
 }
+
+export type FpsCap = 0 | 30 | 60;
+export const FPS_CAPS: FpsCap[] = [0, 60, 30];
 
 /** Does the system ask for less motion? False where there is no window to ask (tests, the worker). */
 export function prefersReducedMotion(): boolean {
@@ -84,18 +122,32 @@ export const DEFAULT_SETTINGS: Settings = {
   tips: true,
   seenTips: [],
   tutorialStep: -1,
+  tutorialAway: false,
+  tutorialSeen: [],
+  roomIntro: false,
+  lessonsDone: [],
   reduceFlashes: prefersReducedMotion(),
   graphicsChecked: false,
   autoGraphics: null,
+  crashReports: true,
+  reportsNotice: false,
+  timelapse: true,
+  showFriendsBuildings: true,
+  fpsCap: 0,
+  batterySaver: false,
+  backupAt: 0,
 };
 
-export const QUALITIES: Quality[] = ['low', 'medium', 'high'];
+export const QUALITIES: Quality[] = ['phone', 'low', 'medium', 'high'];
 export const DRAW_DISTANCES: DrawDistance[] = ['near', 'medium', 'far'];
 export const AUTOSAVE_CHOICES = [0, 2, 5, 10];
 export const UI_SCALE = { min: 0.8, max: 1.4 };
 
 /**
- * Renderer knobs for each quality level. `shadowMap` is each of the sun's shadow cascades, of
+ * Renderer knobs for each quality level. `maxPixels` caps the drawing buffer (M49: a tablet's big
+ * screen at Phone); `trees` the share of trees drawn, `water` the water's full ripples (1) or one
+ * gentle swell (0), `effects` the share of smoke and flame particles, `lodGap` a scale on how long a
+ * stale building chunk waits before it is built again (M49). `shadowMap` is each of the sun's shadow cascades, of
  * which `cascades` are used (M26); `ao` the ambient occlusion's taps a pixel (0: off) and whether it is smoothed; `glow`
  * the soft glow round lights at night; `samples` the frame's multisampling while one of them is
  * on; `aoFar` how far off the occlusion has faded (the camera distance); `ground` the grass's
@@ -106,6 +158,13 @@ export const QUALITY_PARAMS: Record<
   Quality,
   {
     pixelRatio: number;
+    maxPixels: number;
+    trees: number;
+    water: 0 | 1;
+    effects: number;
+    lodGap: number;
+    /** Scale on where buildings hand over to their lighter versions (M49: Phone sooner). */
+    lodDistance: number;
     shadowMap: number;
     crowd: number;
     ao: number;
@@ -124,8 +183,47 @@ export const QUALITY_PARAMS: Record<
     units: UnitQuality;
   }
 > = {
+  phone: {
+    pixelRatio: 1,
+    maxPixels: 1_000_000,
+    trees: 0.5,
+    water: 0,
+    effects: 0.4,
+    lodGap: 2,
+    lodDistance: 0.7,
+    shadowMap: 512,
+    crowd: 0.25,
+    ao: 0,
+    aoBlur: false,
+    glow: false,
+    samples: 2,
+    cascades: 1,
+    aoFar: 0,
+    ground: 0,
+    closeShadowHz: 30,
+    units: {
+      near: 80,
+      far: 500,
+      animate: false,
+      shadows: false,
+      drill: 1,
+      patrol: 1,
+      fly: 1,
+      shields: 0,
+      dust: 0,
+      atomPuffs: 80,
+      atomTrail: 16,
+      atomTint: 0,
+    },
+  },
   low: {
     pixelRatio: 0.75,
+    maxPixels: Infinity,
+    trees: 1,
+    water: 1,
+    effects: 1,
+    lodGap: 1,
+    lodDistance: 1,
     shadowMap: 1024,
     crowd: 0.4,
     ao: 0,
@@ -153,6 +251,12 @@ export const QUALITY_PARAMS: Record<
   },
   medium: {
     pixelRatio: 1,
+    maxPixels: Infinity,
+    trees: 1,
+    water: 1,
+    effects: 1,
+    lodGap: 1,
+    lodDistance: 1,
     shadowMap: 1536,
     crowd: 0.7,
     ao: 4,
@@ -180,6 +284,12 @@ export const QUALITY_PARAMS: Record<
   },
   high: {
     pixelRatio: 2,
+    maxPixels: Infinity,
+    trees: 1,
+    water: 1,
+    effects: 1,
+    lodGap: 1,
+    lodDistance: 1,
     shadowMap: 2048,
     crowd: 1,
     ao: 12,
@@ -254,9 +364,24 @@ export function parseSettings(raw: unknown): Settings {
       ? r.seenTips.filter((t): t is string => typeof t === 'string').slice(0, 100)
       : [],
     tutorialStep: num(r.tutorialStep, d.tutorialStep, -1, 99),
+    tutorialAway: bool(r.tutorialAway, d.tutorialAway),
+    roomIntro: bool(r.roomIntro, d.roomIntro),
+    lessonsDone: Array.isArray(r.lessonsDone)
+      ? r.lessonsDone.filter((t): t is string => typeof t === 'string').slice(0, 20)
+      : [],
+    tutorialSeen: Array.isArray(r.tutorialSeen)
+      ? r.tutorialSeen.filter((t): t is string => typeof t === 'string').slice(0, 20)
+      : [],
     reduceFlashes: bool(r.reduceFlashes, d.reduceFlashes),
     graphicsChecked: bool(r.graphicsChecked, d.graphicsChecked),
     autoGraphics: QUALITIES.includes(r.autoGraphics as Quality) ? (r.autoGraphics as Quality) : null,
+    crashReports: bool(r.crashReports, d.crashReports),
+    reportsNotice: bool(r.reportsNotice, d.reportsNotice),
+    timelapse: bool(r.timelapse, d.timelapse),
+    showFriendsBuildings: bool(r.showFriendsBuildings, d.showFriendsBuildings),
+    fpsCap: oneOf(r.fpsCap, FPS_CAPS, d.fpsCap),
+    batterySaver: bool(r.batterySaver, d.batterySaver),
+    backupAt: num(r.backupAt, d.backupAt, 0, 1e15),
   };
 }
 

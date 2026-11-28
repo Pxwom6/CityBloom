@@ -488,3 +488,15 @@ export const IconBuild = (p: P) => (
     <path d="M4 21V9l6-4 6 4v4M4 21h9M8 21v-5h4v5M18 15v6M15 18h6" />
   </svg>
 );
+/** An arrow into a tray: install the game as an app (the main menu's quiet row). */
+export const IconInstall = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
+  </svg>
+);
+/** A chevron pointing back: the main menu's sub-menus. */
+export const IconBack = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M15 5l-7 7 7 7" />
+  </svg>
+);

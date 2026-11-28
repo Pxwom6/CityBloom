@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { closeContextsAfterEach, newContext, watchErrors } from './helpers';
+import { closeContextsAfterEach, newContext, watchErrors, clickMain, mainButton } from './helpers';
 import { frames, state } from './ui';
 
 closeContextsAfterEach();
@@ -109,8 +109,8 @@ async function place(page: Page, category: string, def: string, spots: [number, 
 async function playChallenge(page: Page, group: { make: true } | { join: string }, layout: number[]) {
   await page.goto('./');
   await ready(page, 'menu');
-  await expect(page.getByTestId('main-challenge-line')).toContainText('Six-month town');
-  await page.getByTestId('main-challenge').click();
+  await expect(await mainButton(page, 'main-challenge-line')).toContainText('Six-month town');
+  await clickMain(page, 'main-challenge');
   await expect(page.getByTestId('challenge-name')).toContainText('Six-month town');
   await expect(page.getByTestId('challenge-twist')).toContainText('No twist');
   await page.getByTestId('board-tab-friends').click();
@@ -351,7 +351,7 @@ test.describe.serial('M44 the weekly challenge', () => {
       await page.screenshot({ path: 'docs/screenshots/m44-rollover.png' });
       // And the main menu has the new week's challenge.
       await page.getByTestId('shell-back').click();
-      await expect(page.getByTestId('main-challenge-line')).not.toContainText('Six-month town');
+      await expect(await mainButton(page, 'main-challenge-line')).not.toContainText('Six-month town');
     } finally {
       await fetch(`${RELAY}/__clock`, { method: 'POST', body: JSON.stringify({ at: null }) });
     }

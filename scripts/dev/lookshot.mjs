@@ -9,6 +9,7 @@
 import { chromium } from '@playwright/test';
 import { execFileSync, spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
+import { clickMain } from './menu.mjs';
 
 const argv = process.argv.slice(2);
 const VALUE_FLAGS = ['views', 'hours', 'season', 'quality', 'dist', 'label', 'at', 'tone', 'init'];
@@ -61,7 +62,7 @@ try {
     PRESETS[quality],
   );
   await page.goto(`http://localhost:${PORT}/`);
-  await page.getByTestId('main-load').click({ timeout: 120_000 });
+  await clickMain(page, 'main-load', { timeout: 120_000 });
   await Promise.all([page.waitForURL(/\?load=/), page.getByTestId('import-file').setInputFiles(file)]);
   await page.waitForFunction(() => window.__game?.ready && window.__game.getShell().mode === 'play', null, {
     timeout: 180_000,

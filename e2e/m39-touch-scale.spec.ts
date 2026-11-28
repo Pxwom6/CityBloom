@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { settings } from './ui';
+import { clickMain } from './helpers';
 
 /**
  * M39 review: the touch-target floor of 24 px holds at the smallest interface size too. A rem is
@@ -77,17 +78,17 @@ test('M39: touch targets are 24 px at the smallest interface size (80 %) on a ph
   await page.goto('./');
   await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 90_000 });
   await atPhoneSize(page);
-  await page.getByTestId('main-friends').tap();
+  await clickMain(page, 'main-friends', { tap: true });
   await expect(page.getByTestId('friends-screen')).toBeVisible();
   await look('the lobby');
   await page.getByTestId('shell-back').tap();
 
-  await page.getByTestId('main-settings').tap();
+  await clickMain(page, 'main-settings', { tap: true });
   await expect(page.getByTestId('settings-screen')).toBeVisible();
   await look('settings');
   await page.getByTestId('shell-back').tap();
 
-  await page.getByTestId('main-new').tap();
+  await clickMain(page, 'main-new', { tap: true });
   await expect(page.getByTestId('new-game')).toBeVisible();
   await look('the new city screen');
 

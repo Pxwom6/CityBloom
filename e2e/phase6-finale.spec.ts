@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { expect, test, type Browser, type BrowserContextOptions, type Page } from '@playwright/test';
-import { closeContextsAfterEach, newContext, watchErrors } from './helpers';
+import { closeContextsAfterEach, newContext, watchErrors, clickMain, mainButton } from './helpers';
 import { fingers, onMap, phone, phoneProblems, type Fingers, type Orient } from './phone';
 import { getMatch, matchLogs, until, type MatchView } from './match';
 import { testModels, goodModelParts, transformParts, writeGlb } from '../scripts/lib/makeGlb';
@@ -340,7 +340,7 @@ test('phase 6 end, 1: a brand-new player’s first city on a laptop, its timelap
   log(`main menu notice: ${(await page.getByTestId('reports-notice').innerText()).replace(/\s+/g, ' ')}`);
   await snap(page, `${who}-menu`);
   await page.getByTestId('reports-notice-ok').click();
-  await page.getByTestId('main-new').click();
+  await clickMain(page, 'main-new');
   await page.getByTestId('new-name').fill('Firstville');
   await page.getByTestId('preset-river').click();
   await page.getByTestId('new-seed').fill('maplewood');
@@ -843,7 +843,7 @@ async function phoneTutorial(page: Page, key: string, orient: Orient) {
   await expect(page.getByTestId('reports-notice')).toBeVisible();
   await snap(page, `${who}-menu`);
   await page.getByTestId('reports-notice-ok').tap();
-  await page.getByTestId('main-new').tap();
+  await clickMain(page, 'main-new', { tap: true });
   await page.getByTestId('new-name').fill('Pocketon');
   await page.getByTestId('preset-river').tap();
   await page.getByTestId('new-seed').fill('phone');
@@ -1623,7 +1623,7 @@ test('phase 6 end, 4: a four-player quick match, two on laptops and two on phone
     // Ada sets up a Race on the Quick match screen and hosts it online.
     await ada.goto('./');
     await ready(ada);
-    await ada.getByTestId('main-match').click();
+    await clickMain(ada, 'main-match');
     await expect(ada.getByTestId('match-screen')).toBeVisible();
     await snap(ada, 'd-screen');
     await ada.getByTestId('match-mode-race').click();
@@ -1642,13 +1642,13 @@ test('phase 6 end, 4: a four-player quick match, two on laptops and two on phone
     // Sam types the code on a laptop; Kit opens the invite link on an iPhone; Lou types it on a Pixel.
     await sam.goto('./');
     await ready(sam);
-    await sam.getByTestId('main-match').click();
+    await clickMain(sam, 'main-match');
     await sam.getByTestId('match-code').fill(code);
     await sam.getByTestId('match-join').click();
     await kit.goto(link);
     await lou.goto('./');
     await ready(lou);
-    await lou.getByTestId('main-match').tap();
+    await clickMain(lou, 'main-match', { tap: true });
     await expect(lou.getByTestId('match-screen')).toBeVisible();
     expect(
       await phoneProblems(lou, '[data-testid=match-screen]'),
@@ -1905,9 +1905,9 @@ test('phase 6 end, 5: this week’s challenge played and posted, and a friend on
       timeout: 120_000,
     },
   );
-  await expect(ada.getByTestId('main-challenge-line')).toContainText('left');
+  await expect(await mainButton(ada, 'main-challenge-line')).toContainText('left');
   log(`menu: ${(await ada.getByTestId('main-challenge-line').textContent())!}`);
-  await ada.getByTestId('main-challenge').click();
+  await clickMain(ada, 'main-challenge');
   await expect(ada.getByTestId('challenge-detail')).toBeVisible();
   log(
     `challenge: ${(await ada.getByTestId('challenge-name').textContent())!} · ${(await ada.getByTestId('challenge-twist').textContent())!}`,
@@ -1949,7 +1949,7 @@ test('phase 6 end, 5: this week’s challenge played and posted, and a friend on
       timeout: 120_000,
     },
   );
-  await kit.getByTestId('main-challenge').tap();
+  await clickMain(kit, 'main-challenge', { tap: true });
   await expect(kit.getByTestId('challenge-detail')).toBeVisible();
   expect(
     await phoneProblems(kit, '[data-testid=challenge-screen]'),
@@ -2031,7 +2031,7 @@ test('phase 6 end, 6: a building made in the Workshop, shared with a friend on a
   // Learn → Making your own buildings: the lesson's town opens on the Workshop.
   await ada.goto('./');
   await expect(ada.getByTestId('main-menu')).toBeVisible({ timeout: 120_000 });
-  await ada.getByTestId('main-learn').click();
+  await clickMain(ada, 'main-learn');
   await ada.getByTestId('lesson-start-buildings').click();
   await ada.waitForFunction(() => window.__game?.ready && window.__game.getShell().mode === 'play', null, {
     timeout: 120_000,
@@ -2329,7 +2329,7 @@ test('phase 6 end, 7: the owner area on a phone handles the reports, the challen
   ).newPage();
   await ada.goto('./');
   await expect(ada.getByTestId('main-menu')).toBeVisible({ timeout: 120_000 });
-  await ada.getByTestId('main-submit').click();
+  await clickMain(ada, 'main-submit');
   await ada.getByTestId('submit-tab-mine').click();
   const accepted = ada.locator('[data-testid="submit-mine-row"][data-status="accepted"]', {
     hasText: 'Clock pavilion',

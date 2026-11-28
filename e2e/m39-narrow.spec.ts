@@ -3,6 +3,7 @@ import { webSocketLink } from '../src/net/link';
 import { friendsPage } from '../tests/war/friendsHarness';
 import { armSam, liveTown } from '../tests/war/liveTown';
 import { armTown, servedTown } from './war';
+import { clickMain } from './helpers';
 
 /**
  * M39 polish: the way into war with friends on a phone held upright and on a tablet, by touch. The
@@ -140,7 +141,7 @@ for (const [label, size] of [
     await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 90_000 });
 
     // --- The lobby: its region ways. ---
-    await page.getByTestId('main-friends').tap();
+    await clickMain(page, 'main-friends', { tap: true });
     await expect(page.getByTestId('friends-screen')).toBeVisible();
     await page.getByTestId('friends-region-start').scrollIntoViewIfNeeded();
     expect.soft(await layoutProblems(page, 'friends-screen'), 'the lobby').toEqual([]);

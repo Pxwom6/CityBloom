@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { closeContextsAfterEach, newContext, skipGraphicsCheck, watchErrors } from './helpers';
+import { closeContextsAfterEach, newContext, skipGraphicsCheck, watchErrors, clickMain } from './helpers';
 import { armTown, servedTown } from './war';
 import { TIPS } from '../src/client/tutorial';
 
@@ -305,7 +305,7 @@ test('phase 5 end, 1: a war with a computer neighbour, from the main menu @playt
   });
 
   // --- A new city with rival neighbours. ---
-  await page.getByTestId('main-new').click();
+  await clickMain(page, 'main-new');
   await page.getByTestId('new-name').fill('Harrowgate');
   // (A fixed map, so the town grows the same way each run: the screen offers a new seed every time.)
   await page.getByTestId('new-seed').fill('cj67eb');

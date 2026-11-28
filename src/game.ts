@@ -187,6 +187,9 @@ export function applyUiScale(scale: number): void {
 }
 
 /** Full-screen menus: the main menu and new-game screen, the pause menu and the screens inside it. */
+/** The main menu's sub-menus (Menu tidy). */
+export type MenuSub = 'play' | 'multiplayer' | 'create';
+
 export type Screen =
   | 'main'
   | 'newGame'
@@ -299,6 +302,12 @@ export class Game {
   editor: MapEditor | null = null;
   /** Open menu screens, innermost last (the pause menu, then save/load/settings inside it). */
   screens: Screen[] = [];
+  /**
+   * The main menu's open sub-menu (Menu tidy): Play, Multiplayer or Create in place of the main
+   * buttons, or null for the main buttons. It stays while a screen opened from it is up, so closing
+   * that screen comes back to it.
+   */
+  menuSub: MenuSub | null = null;
   private speedBeforeMenu: Speed | null = null;
   /** Save slot this city was loaded from or last saved to, and when (performance.now()). */
   slot: string | null = null;

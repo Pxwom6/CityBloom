@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { test, expect, type Browser, type Page } from '@playwright/test';
-import { closeContextsAfterEach, newContext, openGame } from './helpers';
+import { closeContextsAfterEach, newContext, openGame, clickMain } from './helpers';
 import { findSpot, frames, screen } from './ui';
 import { testModels } from '../scripts/lib/makeGlb';
 
@@ -221,7 +221,7 @@ test('my own building: refused with reasons, added, placed as a landmark and a l
     },
   );
   expect((await mine(page)).models).toEqual([]);
-  await page.getByTestId('main-load').click();
+  await clickMain(page, 'main-load');
   await page
     .getByTestId('slot-list')
     .locator('.slot', { hasText: 'With the pavilion' })

@@ -1,6 +1,6 @@
 import { execSync } from 'node:child_process';
 import { expect, test, type Page } from '@playwright/test';
-import { shot, watchErrors } from './helpers';
+import { shot, watchErrors, clickMain, mainButton } from './helpers';
 
 const shell = (page: Page) => page.evaluate(() => window.__game!.getShell());
 const state = (page: Page) => page.evaluate(() => window.__game!.getState());
@@ -57,7 +57,7 @@ test('M15: first launch picks graphics; the app installs, plays offline after on
     const firstBuild = sh.build;
     expect(firstBuild).not.toBe('e2e-next');
     // Settings says what was picked and can check again.
-    await page.getByTestId('main-settings').click();
+    await clickMain(page, 'main-settings');
     await expect(page.getByTestId('graphics-auto')).toContainText('Picked for this device: Low');
     await page.getByTestId('shell-back').click();
 
@@ -98,7 +98,7 @@ test('M15: first launch picks graphics; the app installs, plays offline after on
     // The demo town behind the menu came from the offline copy too.
     expect((await state(page)).population).toBeGreaterThan(0);
     // Found a city offline, through the menu.
-    await page.getByTestId('main-new').click();
+    await clickMain(page, 'main-new');
     await page.getByTestId('new-name').fill('Offlineton');
     await page.getByTestId('new-tutorial').uncheck();
     await page.getByTestId('new-start').click();
@@ -146,8 +146,8 @@ test('M15: first launch picks graphics; the app installs, plays offline after on
     sh = await shell(page);
     expect(sh.graphics.checking).toBe(false);
     expect(sh.settings.quality).toBe('low');
-    await expect(page.getByTestId('main-continue')).toContainText('Offlineton');
-    await page.getByTestId('main-continue').click();
+    await expect(await mainButton(page, 'main-continue')).toContainText('Offlineton');
+    await clickMain(page, 'main-continue');
     await booted(page, 'play');
     const after = await state(page);
     expect(after.cityName).toBe('Offlineton');

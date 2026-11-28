@@ -1,5 +1,5 @@
 import { expect, type Browser, type BrowserContextOptions, type Page } from '@playwright/test';
-import { newContext } from './helpers';
+import { clickMain, newContext } from './helpers';
 
 /**
  * Quick matches (M43) through the interface: players open the Quick match screen from the main menu,
@@ -109,8 +109,7 @@ export async function until(
 export async function quickMatchScreen(p: Page, tap = false): Promise<void> {
   await p.goto('./');
   await p.waitForFunction(() => window.__game?.ready === true, null, { timeout: 120_000 });
-  const press = (id: string) => (tap ? p.getByTestId(id).tap() : p.getByTestId(id).click());
-  await press('main-match');
+  await clickMain(p, 'main-match', { tap });
   await expect(p.getByTestId('match-screen')).toBeVisible();
 }
 

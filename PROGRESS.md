@@ -1,18 +1,18 @@
 # PROGRESS
 
-## Owner key (`OWNER_KEY`): set, waiting on the merge
+## Owner key (`OWNER_KEY`): set
 The owner added the `OWNER_KEY` repository secret (27 November 2026). The deploy workflow passes it to the
-Worker as a Worker secret on the next push to `main`, so the owner area (problem reports from M41, the
-weekly challenge's board from M44, and the submissions from M48) switches on when pull request #24 is
-merged and deployed: then open `https://pxwom6.github.io/CityBloom/#/owner` and sign in with the key
-(kept on that device until signing out). Until then the live owner area says it isn't set up. To change
-the key, update the secret and push to `main`; never paste it into a session or commit it.
+Worker as a Worker secret on each push to `main`, so the owner area (problem reports from M41, the weekly
+challenge's board from M44, and the submissions from M48) comes on with pull request #24's merge (28 November
+2026) once its deploy has run: open `https://pxwom6.github.io/CityBloom/#/owner` and sign in with the key (kept
+on that device until signing out). To change the key, update the secret and push to `main`; never paste it
+into a session or commit it.
 
 Phases 1–5 are merged into `main` (phase 5 in PR #23), which deploys the live site at
-https://pxwom6.github.io/CityBloom/ and, on Cloudflare, the relay for online rooms. **Phase 6
-(playing with friends, SPEC-6.md, M41–M49) is complete** on the branch `claude/ecstatic-brown-64m0nb`,
-which stands in for `friends` (made from `main` at 9490cb2), and waits in pull request #24 for the
-owner's merge. M41–M49 were done in a cloud session; the phase's end (this summary, SPEC_REVIEW, the
+https://pxwom6.github.io/CityBloom/ and, on Cloudflare, the relay for online rooms. **Phase 6 (playing with
+friends, SPEC-6.md, M41–M49) is complete** and merged into `main` in pull request #24 (28 November 2026), from
+the branch `claude/ecstatic-brown-64m0nb`, which stood in for `friends`. M41–M49 were done in a cloud session;
+the phase's end (this summary, SPEC_REVIEW, the
 README, the playthroughs and the Mac checks) on the owner's Mac.
 
 - [x] M0 Foundation
@@ -72,6 +72,28 @@ Every milestone ended with an `M<n> complete:` commit and joined pull request #2
 holds the phase's end too. Reasons for every call are in `docs/DECISIONS.md`, "Phase 6"; the
 brief's items and where each is done in `docs/SPEC_REVIEW.md`, "Phase 6". Phase 5 is complete and
 merged (its notes stay below and in git).
+
+## Menu tidy (after phase 6)
+The owner asked for a tidier main menu (28 November 2026): its 13 buttons are now Continue, **Play** (New city,
+Load city, Scenarios, Learn), **Multiplayer** (Join with a code, Play with friends, Quick match), **Create** (My
+buildings, the map editor) and **Settings**. Each group opens in place with Back, and Esc and the back gesture
+step out of it. The week's challenge is a card under the buttons; Send an idea, Report a problem and Install are
+a quiet row by the version. A new player gets "Start with the tutorial" under Play. Calls in `docs/DECISIONS.md`,
+"Menu tidy"; tests `e2e/menu-tidy.spec.ts`; specs reach menu buttons through `clickMain`/`mainButton` in
+`e2e/helpers.ts` (dev scripts: `scripts/dev/menu.mjs`); pictures `node scripts/dev/menutidyshot.mjs <out>`.
+Branch `claude/ecstatic-brown-64m0nb` (fast-forwarded to `main` after PR #24's merge).
+
+Checked on the Mac (28 November 2026): unit tests 2,174 passed; `e2e/menu-tidy.spec.ts` 8 of 8 (desktop, 140 %,
+iPhone 13 and Pixel 7 upright and sideways); the menu-related specs 96 passed and 5 failed. Pictures:
+`docs/screenshots/menu-tidy-*.jpg`. **Known failures, compared against a build of `main` without this change:**
+- Fail the same way on `main`: `m15-publish` (two `ERR_INTERNET_DISCONNECTED` console errors offline),
+  `m39-narrow` on a phone (`dip-fdeclare` not disabled for a newcomer), `m43-phone` peer-to-peer (the match's
+  speed reads 0, not 3). `m43-match` peer-to-peer fails at that same speed check (not run on `main`).
+- `m39-narrow` on a tablet fails here twice and passed on `main` twice, at the same newcomer check that fails on
+  `main` for the phone; the menu doesn't touch it, so most likely timing (the extra menu tap). Open.
+- The phase 6 playthrough: `main` fails 5 of 7 on this Mac today (1, 3, 4, 6, 7), and this build fails the same
+  five plus test 2 (iPhone tutorial). Test 2 waits for the last card's Next while a data map is open, which folds a
+  phone's card (the phase 6 fold rule); it passed once on `main`. Open, and worth a look at the playthrough itself.
 
 ## Multiplayer review follow-ups (PRs #17–#21)
 The owner's review before merging phase 4 (`MULTIPLAYER-FOLLOWUPS.md`, given to the session): fixes on

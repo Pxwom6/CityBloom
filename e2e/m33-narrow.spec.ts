@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { openGame } from './helpers';
+import { openGame, clickMain } from './helpers';
 
 /**
  * M33, ready for friends: the lobby, the invite and the room's messages on a phone held upright and
@@ -73,7 +73,7 @@ for (const [label, size] of [
     });
     await page.goto('./');
     await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 90_000 });
-    await page.getByTestId('main-friends').tap();
+    await clickMain(page, 'main-friends', { tap: true });
     await expect(page.getByTestId('friends-screen')).toBeVisible();
     await page.getByTestId('friends-help').locator('summary').tap();
     expect(await overflow(page, 'friends-screen')).toEqual([]);

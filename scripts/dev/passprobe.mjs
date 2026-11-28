@@ -4,6 +4,7 @@
 // Usage: npm run build:test && node scripts/dev/passprobe.mjs city.gz [--quality high] [--views overview,city,street] [--hour 13] [--dist dist-test]
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
+import { clickMain } from './menu.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (name, d) => {
@@ -44,7 +45,7 @@ try {
     PRESETS[quality],
   );
   await page.goto(`http://localhost:${PORT}/`);
-  await page.getByTestId('main-load').click({ timeout: 120_000 });
+  await clickMain(page, 'main-load', { timeout: 120_000 });
   await Promise.all([page.waitForURL(/\?load=/), page.getByTestId('import-file').setInputFiles(file)]);
   await page.waitForFunction(() => window.__game?.ready && window.__game.getShell().mode === 'play', null, {
     timeout: 180_000,

@@ -4,6 +4,7 @@
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
+import { clickMain } from './menu.mjs';
 
 const [file, out, hourArg] = process.argv.slice(2);
 if (!file || !out) throw new Error('usage: node scripts/dev/bigshot.mjs city.gz outDir [hour]');
@@ -24,7 +25,7 @@ try {
     localStorage.setItem('citybloom.settings', JSON.stringify({ tips: false, graphicsChecked: true })),
   );
   await page.goto('http://localhost:4195/');
-  await page.getByTestId('main-load').click({ timeout: 120_000 });
+  await clickMain(page, 'main-load', { timeout: 120_000 });
   await Promise.all([page.waitForURL(/\?load=/), page.getByTestId('import-file').setInputFiles(file)]);
   await page.waitForFunction(() => window.__game?.ready && window.__game.getShell().mode === 'play', null, {
     timeout: 180_000,

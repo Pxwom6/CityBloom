@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { shot, skipGraphicsCheck, watchErrors } from './helpers';
+import { shot, skipGraphicsCheck, watchErrors, clickMain } from './helpers';
 import { SCENARIOS } from '../src/data/scenarios';
 
 const N = SCENARIOS.length;
@@ -30,7 +30,7 @@ test('M18: pick a scenario from the menu, read the brief, follow the goals, win 
   await booted(page, 'menu');
 
   // --- The scenario screen: every scenario with a preview, none won yet. ---
-  await page.getByTestId('main-scenarios').click();
+  await clickMain(page, 'main-scenarios');
   await expect(page.getByTestId('scenario-screen')).toBeVisible();
   await expect(page.locator('.scenario-item')).toHaveCount(N);
   await expect(page.getByTestId('scenario-screen')).toContainText(`0 of ${N} won`);

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { skipGraphicsCheck, watchErrors } from './helpers';
+import { skipGraphicsCheck, watchErrors, clickMain } from './helpers';
 
 /**
  * Final playthrough (M12): a new player's first city, start to finish through the real UI. The main
@@ -112,7 +112,7 @@ test('playthrough: a first city from the main menu to a thriving town @playthrou
   await shot(page, 'menu');
 
   // A new city on the river map, normal difficulty, with the tutorial.
-  await page.getByTestId('main-new').click();
+  await clickMain(page, 'main-new');
   await page.getByTestId('new-name').fill('Maplewood');
   await page.getByTestId('preset-river').click();
   // A fixed seed keeps the run repeatable (tests/terrain.test.ts checks any seed takes this layout).
@@ -387,7 +387,7 @@ test('playthrough: a first city from the main menu to a thriving town @playthrou
   await page.waitForFunction(() => window.__game?.ready && window.__game.getShell().mode === 'menu', null, {
     timeout: 90_000,
   });
-  await page.getByTestId('main-continue').click();
+  await clickMain(page, 'main-continue');
   await page.waitForFunction(() => window.__game?.ready && window.__game.getShell().mode === 'play', null, {
     timeout: 90_000,
   });

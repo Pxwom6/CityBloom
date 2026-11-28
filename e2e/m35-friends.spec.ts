@@ -1,5 +1,13 @@
 import { test, expect, type Browser, type Page } from '@playwright/test';
-import { closeContextsAfterEach, newContext, openGame, shot, watchErrors } from './helpers';
+import {
+  closeContextsAfterEach,
+  newContext,
+  openGame,
+  shot,
+  watchErrors,
+  clickMain,
+  mainButton,
+} from './helpers';
 import { frames } from './ui';
 import { armTown, servedTown } from './war';
 
@@ -126,7 +134,7 @@ test('M35: a friend’s raid while the player is away waits for them, with a mat
   // The menu grows its backdrop town first: slow on SwiftShader beside another 3D page.
   try {
     await expect(sam.getByTestId('main-menu')).toBeVisible({ timeout: 300_000 });
-    await expect(sam.getByTestId('main-continue')).toBeVisible({ timeout: 60_000 });
+    await expect(await mainButton(sam, 'main-continue')).toBeVisible({ timeout: 60_000 });
   } catch (err) {
     await sam.screenshot({ path: 'test-results/m35-friends-sam-menu.png' }).catch(() => undefined);
     console.log(`Sam's page at ${sam.url()}:\n${samLog.slice(-40).join('\n')}`);
@@ -172,7 +180,7 @@ test('M35: a friend’s raid while the player is away waits for them, with a mat
 
   // Sam comes back: Samford rejoins the region and takes the battle at once.
   await sam.bringToFront();
-  await sam.getByTestId('main-continue').click();
+  await clickMain(sam, 'main-continue');
   await sam.waitForFunction(
     () => window.__game?.ready === true && window.__game.getShell().mode === 'play',
     null,

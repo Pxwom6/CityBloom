@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { shot, watchErrors } from './helpers';
+import { shot, watchErrors, clickMain } from './helpers';
 import { frames, screen, settings, settledHint, state, untilHour } from './ui';
 
 /**
@@ -14,7 +14,7 @@ test('Phase 2 review: an older city lays its regional rail link from the toolbar
   const errs = watchErrors(page);
   await settings(page);
   await page.goto('./');
-  await page.getByTestId('main-load').click({ timeout: 120_000 });
+  await clickMain(page, 'main-load', { timeout: 120_000 });
   await Promise.all([
     page.waitForURL(/\?load=/),
     page.getByTestId('import-file').setInputFiles('Saves/Legacy-no-rail.citybloom'),

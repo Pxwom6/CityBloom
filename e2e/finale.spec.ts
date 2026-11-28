@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { skipGraphicsCheck, watchErrors } from './helpers';
+import { skipGraphicsCheck, watchErrors, clickMain } from './helpers';
 
 /**
  * The end of phase 2: a playthrough through the real UI that uses the new features. A map made in
@@ -87,7 +87,7 @@ test('finale: a map from the editor, a city on it, and the phase-2 tools through
   });
 
   // --- The map editor: a river valley reshaped, with a bay, a wooded ridge and ore in it. ---
-  await page.getByTestId('main-editor').click();
+  await clickMain(page, 'main-editor');
   await page.getByTestId('maps-base-river').click();
   await page.getByTestId('maps-seed').fill('kestrel');
   await page.getByTestId('maps-name').fill('Kestrel Vale');
@@ -163,7 +163,7 @@ test('finale: a map from the editor, a city on it, and the phase-2 tools through
   });
 
   // --- A new city on the map, from the new-city screen. ---
-  await page.getByTestId('main-new').click();
+  await clickMain(page, 'main-new');
   await page.locator('[data-testid^="newmap-m"]').filter({ hasText: 'Kestrel Vale' }).click();
   await page.getByTestId('new-name').fill('Kestrelford');
   await page.getByTestId('difficulty-easy').click();
@@ -443,7 +443,7 @@ test('finale: a map from the editor, a city on it, and the phase-2 tools through
   await page.waitForFunction(() => window.__game?.ready && window.__game.getShell().mode === 'menu', null, {
     timeout: 90_000,
   });
-  await page.getByTestId('main-continue').click();
+  await clickMain(page, 'main-continue');
   await page.waitForFunction(() => window.__game?.ready && window.__game.getShell().mode === 'play', null, {
     timeout: 90_000,
   });

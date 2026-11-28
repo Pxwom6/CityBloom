@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { shot, watchErrors } from './helpers';
+import { shot, watchErrors, clickMain } from './helpers';
 import { frames, screen, settings, untilHour } from './ui';
 
 /**
@@ -52,7 +52,7 @@ for (const file of SAVES)
     const errs = watchErrors(page);
     await settings(page);
     await page.goto('./');
-    await page.getByTestId('main-load').click({ timeout: 120_000 });
+    await clickMain(page, 'main-load', { timeout: 120_000 });
     await Promise.all([page.waitForURL(/\?load=/), page.getByTestId('import-file').setInputFiles(file)]);
     await page.waitForFunction(() => window.__game?.ready && window.__game.getShell().mode === 'play', null, {
       timeout: 180_000,

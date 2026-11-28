@@ -5,6 +5,7 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { chromium, devices } from 'playwright';
+import { clickMain } from './menu.mjs';
 
 const out = process.argv[2] ?? 'phone-shots';
 const arg = (name, d) => {
@@ -115,7 +116,7 @@ try {
     );
     if (load) {
       await page.goto(`http://localhost:${PORT}/`);
-      await page.getByTestId('main-load').tap({ timeout: 120_000 });
+      await clickMain(page, 'main-load', { tap: true, timeout: 120_000 });
       await Promise.all([page.waitForURL(/\?load=/), page.getByTestId('import-file').setInputFiles(load)]);
     } else await page.goto(`http://localhost:${PORT}/?paused=1&seed=phone`);
     // A grown town to look at (the e2e's planned town, through the test API).

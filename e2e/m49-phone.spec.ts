@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { watchErrors } from './helpers';
+import { watchErrors, clickMain } from './helpers';
 import {
   fingers,
   holdForSpot,
@@ -200,7 +200,7 @@ for (const [key, name, orient] of PROFILES) {
         .poll(() => page.evaluate(() => window.__game!.getShell().settings))
         .toMatchObject({ quality: 'phone', fpsCap: 30, shadows: false, autoGraphics: 'phone' });
       await shot(page, `m49-phone-${key}-${orient}-menu`);
-      await page.getByTestId('main-new').tap();
+      await clickMain(page, 'main-new', { tap: true });
       await page.getByTestId('preset-river').tap();
       // The seed is typed on the phone's keyboard, so the run is the same every time.
       await page.getByTestId('new-seed').fill('phone');

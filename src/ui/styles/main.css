@@ -646,6 +646,14 @@ body {
   width: min(24rem, 100%);
   color: var(--color-text-inverse);
 }
+/*
+ * The main menu hangs from the top (Menu tidy), so its title stays put when a sub-menu takes the main
+ * buttons' place; a window too short for it scrolls from its top, never cutting the title off.
+ */
+.shell.menu > .shell-main {
+  align-self: start;
+  margin-top: max(0px, 12vh - var(--space-4));
+}
 .shell-title {
   margin: 0;
   font-size: calc(var(--font-size-xxl) * 1.6);
@@ -729,6 +737,256 @@ body {
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-normal);
   opacity: 0.8;
+}
+/*
+ * The main menu tidied (Menu tidy): Play, Multiplayer and Create open sub-menus in place of the main
+ * buttons (a chevron says so), with Back; the week's challenge is a card under the buttons; Send an
+ * idea, Report a problem and Install sit in a quiet row beside the version.
+ */
+.shell-btn.has-sub {
+  position: relative;
+  padding-right: calc(var(--space-4) + 1.4rem);
+}
+.shell-btn.has-sub::after {
+  content: '›';
+  position: absolute;
+  right: var(--space-4);
+  top: 50%;
+  transform: translateY(-52%);
+  font-size: 1.6em;
+  font-weight: var(--font-weight-normal);
+  line-height: 1;
+  opacity: 0.55;
+}
+.menu-tutorial {
+  appearance: none;
+  align-self: flex-start;
+  margin: calc(var(--space-1) * -1) 0 var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-inverse);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+}
+.menu-tutorial b {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+.menu-tutorial:hover b {
+  text-decoration-thickness: 2px;
+}
+.menu-sub {
+  gap: var(--space-3);
+}
+.menu-sub-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.menu-back {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-2);
+  border: 1px solid rgba(246, 243, 234, 0.35);
+  border-radius: var(--radius-md);
+  background: rgba(18, 26, 36, 0.5);
+  color: var(--color-text-inverse);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
+.menu-back:hover {
+  background: rgba(18, 26, 36, 0.7);
+}
+.menu-back svg {
+  width: 1.1em;
+  height: 1.1em;
+}
+.menu-sub-title {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  color: var(--color-text-inverse);
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.4);
+}
+.menu-items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.menu-join {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-sm);
+}
+.menu-join-label {
+  font-weight: var(--font-weight-medium);
+}
+.menu-join-row {
+  display: flex;
+  gap: var(--space-2);
+}
+.menu-join-row input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: var(--font-size-md);
+  letter-spacing: 0.06em;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--color-text);
+  user-select: text;
+}
+.menu-join-row .btn {
+  flex: none;
+  padding-left: var(--space-4);
+  padding-right: var(--space-4);
+}
+.menu-join .segmented {
+  align-self: stretch;
+}
+.menu-join .segmented button {
+  flex: 1;
+}
+.menu-join-hint {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.menu-join .friends-problem {
+  margin: 0;
+}
+.menu-card {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid rgba(246, 243, 234, 0.3);
+  border-radius: var(--radius-md);
+  background: rgba(18, 26, 36, 0.55);
+  color: var(--color-text-inverse);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.menu-card:hover {
+  background: rgba(18, 26, 36, 0.72);
+}
+.menu-card:focus-visible,
+.menu-back:focus-visible,
+.menu-tutorial:focus-visible,
+.menu-link:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+.menu-card-icon {
+  flex: none;
+  width: 1.4rem;
+  height: 1.4rem;
+  color: var(--color-warning);
+}
+.menu-card-text {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.35;
+}
+.menu-card-go {
+  flex: none;
+  font-size: 1.4em;
+  line-height: 1;
+  opacity: 0.6;
+}
+.shell-foot.menu-foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  opacity: 1;
+}
+.menu-quiet {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-1);
+  margin-left: calc(var(--space-2) * -1);
+}
+.menu-link {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-inverse);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  opacity: 0.88;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+}
+.menu-link:hover {
+  opacity: 1;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+.menu-link svg {
+  width: 1.15em;
+  height: 1.15em;
+}
+.menu-install-note {
+  flex-basis: 100%;
+  padding: 0 var(--space-2) var(--space-1);
+  color: var(--color-text-inverse);
+  font-size: var(--font-size-xs);
+}
+.menu-version {
+  opacity: 0.7;
+}
+/* By touch (phones, and tablets too), every press on the main menu at least 44 px. */
+@media (pointer: coarse) {
+  :is(
+    .menu-link,
+    .menu-back,
+    .menu-tutorial,
+    .menu-card,
+    .menu-join .btn,
+    .menu-join input,
+    .menu-join .segmented button
+  ) {
+    min-height: 44px;
+  }
+}
+#ui[data-phone]
+  :is(
+    .menu-link,
+    .menu-back,
+    .menu-tutorial,
+    .menu-card,
+    .menu-join .btn,
+    .menu-join input,
+    .menu-join .segmented button
+  ) {
+  min-height: 44px;
 }
 .shell-nav.compact .shell-btn {
   padding: var(--space-2) var(--space-3);
@@ -5800,6 +6058,40 @@ body {
   justify-self: stretch;
 }
 /*
+ * A phone held sideways (Menu tidy): the title and the quiet row on the left, the buttons and the
+ * week's card on the right, so the whole menu fits the short screen.
+ */
+#ui[data-phone][data-orient='landscape'] .shell.menu > .shell-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  grid-auto-rows: min-content;
+  column-gap: var(--space-6);
+  row-gap: var(--space-3);
+  width: min(56rem, 100%);
+  margin-top: 0;
+}
+#ui[data-phone][data-orient='landscape'] .shell-main > .shell-brand {
+  grid-column: 1;
+  grid-row: 1;
+}
+#ui[data-phone][data-orient='landscape'] .shell-main > .shell-nav {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+}
+#ui[data-phone][data-orient='landscape'] .shell-main > .menu-card {
+  grid-column: 2;
+  grid-row: 4;
+}
+#ui[data-phone][data-orient='landscape'] .shell-main > .shell-notice {
+  grid-column: 1;
+  grid-row: 2;
+}
+#ui[data-phone][data-orient='landscape'] .shell-main > .menu-foot {
+  grid-column: 1;
+  grid-row: 3 / span 2;
+  align-self: end;
+}
+/*
  * Phones: every press at least 44 px, small buttons, fields, the top bar's figures and the menus'
  * items included (the rules above for narrow windows give 24 px; these come later and weigh as much).
  */
@@ -6274,10 +6566,6 @@ body {
 }
 
 /* The weekly challenge (M44): its screen and board, the end card, and the bar while watching a run. */
-.challenge-btn small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .challenge-screen {
   width: min(56rem, 100%);
 }

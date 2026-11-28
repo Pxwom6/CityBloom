@@ -11,6 +11,7 @@
 import { spawn, execSync } from 'node:child_process';
 import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { chromium, devices } from 'playwright';
+import { clickMain } from './menu.mjs';
 
 const arg = (name, d) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -297,7 +298,7 @@ try {
         });
         const t0 = Date.now();
         await page.goto(`http://localhost:${PORT}/`);
-        await page.getByTestId('main-load').click({ timeout: 180_000 });
+        await clickMain(page, 'main-load', { timeout: 180_000 });
         await Promise.all([
           page.waitForURL(/\?load=/, { timeout: 180_000 }),
           page.getByTestId('import-file').setInputFiles(CITIES[city] ?? city),

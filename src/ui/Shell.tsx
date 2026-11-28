@@ -2,10 +2,12 @@ import { QuickMatchScreen } from './Match';
 import { isIOS } from '../client/platform';
 import { deviceMemory, tooBigFor } from '../client/memoryBudget';
 import { currentDevice } from '../client/graphicsCheck';
-import { isPhone } from '../game';
-import { ChallengeMenuButton, ChallengeScreen, weekName } from './Challenge';
+import { isPhone, type Game, type MenuSub } from '../game';
+import { ChallengeMenuCard, ChallengeScreen, weekName } from './Challenge';
 import { FriendsScreen } from './Friends';
 import { relayUrl } from '../net/multiplayer';
+import { formatInvite, INVITE_INPUT_MAX, inviteProblem, parseInvite } from '../../relay/protocol';
+import { IconAlert, IconBack, IconChat, IconInstall } from './icons';
 import { CLIMATES, INTENSITY_NAMES, PRESET_CLIMATE, type WeatherIntensity } from '../data/climate';
 import { ScenarioScreen } from './Scenario';
 import { SCENARIOS } from '../data/scenarios';
@@ -183,88 +185,367 @@ export function Segmented<T extends string | number>(props: {
   );
 }
 
+/** Where each sub-menu sits in the browser's history, so a phone's back gesture closes it. */
+const MENU_STATE = 'citybloomMenu';
+
+const SUB_TITLES: Record<MenuSub, string> = { play: 'Play', multiplayer: 'Multiplayer', create: 'Create' };
+
+/** Open one of the main menu's sub-menus in place of its main buttons, with a step in history. */
+function openSub(game: Game, sub: MenuSub): void {
+  game.menuSub = sub;
+  history.pushState({ [MENU_STATE]: sub }, '');
+  game.notify();
+}
+
+/** Back from a sub-menu to the main buttons: through history when the sub-menu made a step there. */
+function backFromSub(game: Game): void {
+  if ((history.state as Record<string, unknown> | null)?.[MENU_STATE]) history.back();
+  else {
+    game.menuSub = null;
+    game.notify();
+  }
+}
+
+/**
+ * The phone's back gesture (and the browser's Back) on the main menu: out of a screen opened from a
+ * sub-menu (back to the sub-menu, which keeps its step), or out of the sub-menu.
+ */
+function onMenuPop(game: Game): void {
+  if (game.mode !== 'menu' || !game.menuSub) return;
+  if (game.screens.length > 1) {
+    game.closeScreen();
+    history.pushState({ [MENU_STATE]: game.menuSub }, '');
+    return;
+  }
+  game.menuSub = menuSubFromHistory();
+  game.notify();
+}
+
+/**
+ * The sub-menu this page's history step was in (a reload, or Back from a city opened from it), so the
+ * main menu opens where the player left it.
+ */
+export function menuSubFromHistory(): MenuSub | null {
+  const at = (history.state as Record<string, unknown> | null)?.[MENU_STATE];
+  return at === 'play' || at === 'multiplayer' || at === 'create' ? at : null;
+}
+
+/** A first city with the first-city tutorial, on the new-city screen's defaults (Menu tidy). */
+function startTutorialCity(game: Game): void {
+  const q = new URLSearchParams({
+    new: '1',
+    name: randomName(),
+    seed: randomSeed(),
+    preset: 'river',
+    difficulty: 'normal',
+    sandbox: '0',
+    disasters: game.settings.disasters ? '1' : '0',
+    elections: game.settings.elections ? '1' : '0',
+    tutorial: '1',
+  });
+  location.href = `${location.pathname}?${q.toString()}`;
+}
+
+/** What a code names: rooms, regions and matches have codes alike, so the player says which. */
+type JoinKind = 'city' | 'region' | 'match';
+const JOIN_KINDS: readonly JoinKind[] = ['city', 'region', 'match'];
+const JOIN_LABEL: Record<JoinKind, string> = { city: 'City', region: 'Region', match: 'Match' };
+const JOIN_HINT: Record<JoinKind, string> = {
+  city: 'A city you build together',
+  region: 'Bring a city of yours to their region',
+  match: 'A quick match',
+};
+
+/**
+ * Join with a code at the top of Multiplayer (Menu tidy), so joining a mate is one step: a shared
+ * city or a match opens straight away (the name is asked on the way in, as an invite link does); a
+ * region opens Play with friends with the code filled in, to choose the city to bring.
+ */
+function JoinWithCode() {
+  const game = useGame();
+  const [code, setCode] = useState('');
+  const [kind, setKind] = useState<JoinKind>('city');
+  const [problem, setProblem] = useState<string | null>(null);
+  const join = () => {
+    const inv = parseInvite(code);
+    const why = inviteProblem(inv);
+    if (why) return setProblem(kind === 'city' ? why : why.replace('a room', `a ${kind}`));
+    const invite = formatInvite(inv!);
+    if (kind === 'city') location.href = `${location.pathname}?join=${invite}`;
+    else if (kind === 'match') location.href = `${location.pathname}?match=${invite}`;
+    else {
+      game.pendingRegion = invite;
+      game.openScreen('friends');
+    }
+  };
+  return (
+    <div class="menu-join" data-testid="main-join-box">
+      <label class="menu-join-label" for="main-join-code">
+        Join with a code
+      </label>
+      <div class="menu-join-row">
+        <input
+          id="main-join-code"
+          type="text"
+          inputMode="text"
+          autoCapitalize="characters"
+          autoComplete="off"
+          spellcheck={false}
+          maxLength={INVITE_INPUT_MAX}
+          placeholder="7KQ2MX"
+          value={code}
+          data-testid="main-join-code"
+          onInput={(e) => {
+            setCode((e.target as HTMLInputElement).value.toUpperCase());
+            setProblem(null);
+          }}
+          onKeyDown={(e) => e.key === 'Enter' && code.trim() && join()}
+        />
+        <button class="btn active" data-testid="main-join" disabled={!code.trim()} onClick={join}>
+          Join
+        </button>
+      </div>
+      <Segmented
+        value={kind}
+        options={JOIN_KINDS}
+        label={(k) => JOIN_LABEL[k]}
+        testid="main-join-kind"
+        onChange={(k) => {
+          setKind(k);
+          setProblem(null);
+        }}
+      />
+      <small class="menu-join-hint" data-testid="main-join-hint">
+        {JOIN_HINT[kind]}
+      </small>
+      {problem && (
+        <p class="friends-problem" role="alert" data-testid="main-join-problem">
+          {problem}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Everything the arrow keys step through on the main menu, top to bottom. */
+function menuStops(menu: HTMLElement): HTMLElement[] {
+  return [...menu.querySelectorAll<HTMLElement>('button, input')].filter(
+    (el) => !(el as HTMLButtonElement).disabled && el.offsetParent !== null,
+  );
+}
+
+/**
+ * The main menu (tidied): Continue, then Play, Multiplayer and Create (each a sub-menu shown in place
+ * of these buttons, with Back), and Settings; the week's challenge as a card under them; Send an idea,
+ * Report a problem and Install in a quiet row beside the version.
+ */
 function MainMenu() {
   const game = useGameUpdates(500);
   const [slots] = useSlots();
   const latest = slots?.[0];
+  const fresh = slots !== null && slots.length === 0;
+  const sub = game.menuSub;
+  const menu = useRef<HTMLDivElement>(null);
+  const lastSub = useRef<MenuSub | null>(sub);
+  // Keyboard: the arrows step through the menu's buttons, Esc backs out of a sub-menu (before the
+  // shell's own Escape, which on the main menu has nothing to close).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (game.screen !== 'main' || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+      if (e.code === 'Escape' && game.menuSub) {
+        e.preventDefault();
+        backFromSub(game);
+        return;
+      }
+      const step = { ArrowDown: 1, ArrowUp: -1, Home: -Infinity, End: Infinity }[e.key];
+      if (step === undefined || !menu.current) return;
+      const typing = (e.target as HTMLElement | null)?.tagName === 'INPUT';
+      if (typing && (e.key === 'Home' || e.key === 'End')) return;
+      const stops = menuStops(menu.current);
+      if (!stops.length) return;
+      e.preventDefault();
+      const at = stops.indexOf(document.activeElement as HTMLElement);
+      const to =
+        step === -Infinity
+          ? 0
+          : step === Infinity
+            ? stops.length - 1
+            : at < 0
+              ? step > 0
+                ? 0
+                : stops.length - 1
+              : (at + step + stops.length) % stops.length;
+      stops[to]!.focus();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [game]);
+  // Into a sub-menu: its first button takes the focus (not the code field, which would bring up a
+  // phone's keyboard); back out: the button that opened it.
+  useEffect(() => {
+    const was = lastSub.current;
+    lastSub.current = sub;
+    if (was === sub || !menu.current) return;
+    const target = sub
+      ? menu.current.querySelector<HTMLElement>('.menu-items button.shell-btn:not(:disabled)')
+      : menu.current.querySelector<HTMLElement>(`[data-testid="main-${was}"]`);
+    target?.focus({ preventScroll: true });
+  }, [sub]);
   return (
-    <div class="shell-main" data-testid="main-menu">
+    <div class="shell-main" data-testid="main-menu" data-sub={sub ?? ''} ref={menu}>
       <div class="shell-brand">
         <h1 class="shell-title">{GAME_TITLE}</h1>
         <p class="shell-tagline">Grow a living city from an empty valley.</p>
       </div>
-      <nav class="shell-nav">
-        {latest && (
+      {sub ? (
+        <nav class="shell-nav menu-sub" data-testid={`main-sub-${sub}`} aria-label={SUB_TITLES[sub]}>
+          <div class="menu-sub-head">
+            <button class="menu-back" data-testid="main-back" onClick={() => backFromSub(game)}>
+              <IconBack />
+              <span>Back</span>
+            </button>
+            <h2 class="menu-sub-title">{SUB_TITLES[sub]}</h2>
+          </div>
+          {sub === 'multiplayer' && <JoinWithCode />}
+          <div class="menu-items">
+            {sub === 'play' && (
+              <>
+                <button
+                  class={`shell-btn ${fresh ? 'primary' : ''}`}
+                  data-testid="main-new"
+                  onClick={() => game.openScreen('newGame')}
+                >
+                  <span>New city</span>
+                </button>
+                <button class="shell-btn" data-testid="main-load" onClick={() => game.openScreen('load')}>
+                  <span>Load city</span>
+                  {slots && slots.length > 0 && <small>{slots.length} saved</small>}
+                </button>
+                <button
+                  class="shell-btn"
+                  data-testid="main-scenarios"
+                  onClick={() => game.openScreen('scenarios')}
+                >
+                  <span>Scenarios</span>
+                  <small>{SCENARIOS.length} cities, each with goals to win</small>
+                </button>
+                <button class="shell-btn" data-testid="main-learn" onClick={() => game.openScreen('learn')}>
+                  <span>Learn</span>
+                  <small>short lessons, a few minutes each</small>
+                </button>
+              </>
+            )}
+            {sub === 'multiplayer' && (
+              <>
+                <button
+                  class="shell-btn"
+                  data-testid="main-friends"
+                  title="Build one city together, or each bring your own to a shared region: host, or join with a code"
+                  onClick={() => game.openScreen('friends')}
+                >
+                  <span>Play with friends</span>
+                  <small>one city together, or a region of your cities</small>
+                </button>
+                <button
+                  class="shell-btn"
+                  data-testid="main-match"
+                  title="Two to four of you, each with a small city on the same map, against the clock"
+                  onClick={() => game.openScreen('match')}
+                >
+                  <span>Quick match</span>
+                  <small>race friends in 15 to 30 minutes</small>
+                </button>
+              </>
+            )}
+            {sub === 'create' && (
+              <>
+                <button
+                  class="shell-btn"
+                  data-testid="main-buildings"
+                  title="Make a building of your own in the Workshop, then try it in a small town that isn’t saved"
+                  onClick={() => (location.href = `${location.pathname}?workshop=1`)}
+                >
+                  <span>My buildings</span>
+                  <small>make your own in the Workshop</small>
+                </button>
+                <button class="shell-btn" data-testid="main-editor" onClick={() => game.openScreen('maps')}>
+                  <span>Map editor</span>
+                  <small>{isPhone() ? 'needs a tablet or a computer' : 'make and share your own maps'}</small>
+                </button>
+              </>
+            )}
+          </div>
+        </nav>
+      ) : (
+        <nav class="shell-nav" data-testid="main-top">
+          {latest && (
+            <button
+              class="shell-btn primary"
+              data-testid="main-continue"
+              onClick={() => openSlot(latest.slot, latest)}
+            >
+              <span>Continue</span>
+              <small>
+                {latest.label !== latest.cityName && `${latest.label} · `}
+                <SlotLine s={latest} />
+              </small>
+            </button>
+          )}
           <button
-            class="shell-btn primary"
-            data-testid="main-continue"
-            onClick={() => openSlot(latest.slot, latest)}
+            class={`shell-btn has-sub ${fresh ? 'primary' : ''}`}
+            data-testid="main-play"
+            aria-haspopup="menu"
+            onClick={() => openSub(game, 'play')}
           >
-            <span>Continue</span>
-            <small>
-              {latest.label !== latest.cityName && `${latest.label} · `}
-              <SlotLine s={latest} />
-            </small>
+            <span>Play</span>
+            <small>a new city, your saves, scenarios, lessons</small>
           </button>
-        )}
-        <button
-          class={`shell-btn ${latest || slots === null ? '' : 'primary'}`}
-          data-testid="main-new"
-          onClick={() => game.openScreen('newGame')}
-        >
-          <span>New city</span>
-        </button>
-        <button
-          class="shell-btn"
-          data-testid="main-friends"
-          title="Build one city together: host a room or join one with a code"
-          onClick={() => game.openScreen('friends')}
-        >
-          <span>Play with friends</span>
-          <small>build one city together</small>
-        </button>
-        <button
-          class="shell-btn"
-          data-testid="main-match"
-          title="Two to four of you, each with a small city on the same map, against the clock"
-          onClick={() => game.openScreen('match')}
-        >
-          <span>Quick match</span>
-          <small>race friends in 15 to 30 minutes</small>
-        </button>
-        <ChallengeMenuButton />
-        <button class="shell-btn" data-testid="main-learn" onClick={() => game.openScreen('learn')}>
-          <span>Learn</span>
-          <small>short lessons, a few minutes each</small>
-        </button>
-        <button class="shell-btn" data-testid="main-scenarios" onClick={() => game.openScreen('scenarios')}>
-          <span>Scenarios</span>
-          <small>{SCENARIOS.length} cities, each with goals to win</small>
-        </button>
-        <button class="shell-btn" data-testid="main-editor" onClick={() => game.openScreen('maps')}>
-          <span>Map editor</span>
-          <small>{isPhone() ? 'needs a tablet or a computer' : 'make and share your own maps'}</small>
-        </button>
-        <button class="shell-btn" data-testid="main-load" onClick={() => game.openScreen('load')}>
-          <span>Load city</span>
-          {slots && slots.length > 0 && <small>{slots.length} saved</small>}
-        </button>
-        <button class="shell-btn" data-testid="main-settings" onClick={() => game.openScreen('settings')}>
-          <span>Settings</span>
-        </button>
-        <button class="shell-btn" data-testid="main-submit" onClick={() => game.openSubmit()}>
-          <span>Send an idea</span>
-          <small>ideas and buildings for the game</small>
-        </button>
-        <button class="shell-btn" data-testid="main-report" onClick={() => game.openScreen('report')}>
-          <span>Report a problem</span>
-        </button>
-        <InstallButton />
-      </nav>
+          {fresh && (
+            <button class="menu-tutorial" data-testid="main-tutorial" onClick={() => startTutorialCity(game)}>
+              New here? <b>Start with the tutorial</b>
+            </button>
+          )}
+          <button
+            class="shell-btn has-sub"
+            data-testid="main-multiplayer"
+            aria-haspopup="menu"
+            onClick={() => openSub(game, 'multiplayer')}
+          >
+            <span>Multiplayer</span>
+            <small>with friends, or a quick match</small>
+          </button>
+          <button
+            class="shell-btn has-sub"
+            data-testid="main-create"
+            aria-haspopup="menu"
+            onClick={() => openSub(game, 'create')}
+          >
+            <span>Create</span>
+            <small>your own buildings and maps</small>
+          </button>
+          <button class="shell-btn" data-testid="main-settings" onClick={() => game.openScreen('settings')}>
+            <span>Settings</span>
+          </button>
+        </nav>
+      )}
+      {!sub && <ChallengeMenuCard />}
       <ReportsNotice />
-      <footer class="shell-foot" data-testid="shell-foot">
-        Version {GAME_VERSION} · build {BUILD_ID}
-        {game.updates.offlineReady && ' · works offline'}
+      <footer class="shell-foot menu-foot" data-testid="shell-foot">
+        <div class="menu-quiet">
+          <button class="menu-link" data-testid="main-submit" onClick={() => game.openSubmit()}>
+            <IconChat />
+            <span>Send an idea</span>
+          </button>
+          <button class="menu-link" data-testid="main-report" onClick={() => game.openScreen('report')}>
+            <IconAlert />
+            <span>Report a problem</span>
+          </button>
+          <InstallButton />
+        </div>
+        <span class="menu-version">
+          Version {GAME_VERSION} · build {BUILD_ID}
+          {game.updates.offlineReady && ' · works offline'}
+        </span>
       </footer>
     </div>
   );
@@ -360,20 +641,24 @@ function InstallButton() {
   const [steps, setSteps] = useState(false);
   const way = game.install.way;
   if (!way) return null;
-  const note =
-    way === 'prompt' || !steps
-      ? 'Its own icon and window, like any other app'
-      : `${INSTALL_STEPS[way]} Saved cities stay here: Export one, then Import it in the app.`;
   return (
-    <button
-      class="shell-btn ghost"
-      data-testid="main-install"
-      aria-expanded={way === 'prompt' ? undefined : steps}
-      onClick={() => (way === 'prompt' ? void game.install.prompt() : setSteps(!steps))}
-    >
-      <span>Install Citybloom</span>
-      <small data-testid="install-note">{note}</small>
-    </button>
+    <>
+      <button
+        class="menu-link"
+        data-testid="main-install"
+        title="Its own icon and window, like any other app"
+        aria-expanded={way === 'prompt' ? undefined : steps}
+        onClick={() => (way === 'prompt' ? void game.install.prompt() : setSteps(!steps))}
+      >
+        <IconInstall />
+        <span>Install</span>
+      </button>
+      {way !== 'prompt' && steps && (
+        <small class="menu-install-note" data-testid="install-note" role="status">
+          {`${INSTALL_STEPS[way]} Saved cities stay here: Export one, then Import it in the app.`}
+        </small>
+      )}
+    </>
   );
 }
 
@@ -1369,8 +1654,14 @@ export function Shell() {
       e.preventDefault();
       game.closeScreen();
     };
+    // The phone's back gesture steps out of the main menu's sub-menus (Menu tidy).
+    const onPop = () => onMenuPop(game);
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('popstate', onPop);
+    };
   }, [game]);
   if (!screen) return null;
   return (

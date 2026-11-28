@@ -3190,3 +3190,45 @@ and uncovered. One line a finding:
 - *A four-player match's fourth city ran off an iPhone's scoreboard* (the row scrolled sideways): held upright, the
   chips drop their rank numbers (they're in order already) and tighten, and the clock shrinks, so four cities fit
   across a 390 px phone (a 360 px one scrolls the last few pixels). The playthrough checks every chip is in view.
+
+## Menu tidy (the main menu's 13 buttons into Play, Multiplayer, Create)
+The owner's brief: a short top level with sub-menus, every screen as it was, only the way to them changed.
+- *The sub-menu is `Game.menuSub`, not a screen*: it shows in place of the main buttons (the brief: not a new
+  screen on top), and it stays while a screen opened from it is up, so closing Load or Scenarios comes back to
+  Play rather than the top. The test API's `getShell().menu` reports it; the menu has `data-sub`.
+- *The back gesture is a history step*: opening a sub-menu pushes `{ citybloomMenu }`; Back, Esc and the browser's
+  Back all go through `history.back()` when that step is there. Back from a screen opened from a sub-menu closes
+  the screen and pushes the step again (still in the sub-menu). A reload, or Back from a city opened from a
+  sub-menu, opens the menu in that sub-menu (`menuSubFromHistory`). `?screen=learn|scenarios` opens with Play
+  behind it, a region invite with Multiplayer.
+- *The title stays put*: the column hangs from 12 % down instead of being centred, which made the title jump
+  ~120 px whenever a sub-menu (shorter) replaced the main buttons. The other menu screens stay centred.
+- *Join with a code asks City, Region or Match*: the three kinds of code look the same (six characters; the key's
+  presence only says online or peer-to-peer), and guessing would need a round trip to the relay that a
+  peer-to-peer code can't make. City is the default (the commonest), so joining a mate's city is type + Join. A
+  city and a match go straight in (the name is asked on the boot screen, as an invite link does); a region opens
+  Play with friends with the code filled in, because a region needs the city to bring.
+- *Create → My buildings opens a small town* (`?workshop=1`: the Workshop lesson's town without its cards, kept out
+  of the saves and the timelapse like a lesson's): My buildings and the Workshop only exist inside a city, and the
+  Workshop's See and Use steps need streets. It opens on the player's models, or on the Workshop if they have none;
+  a toast says the town isn't saved and their buildings are kept for every city.
+- *"Start with the tutorial" founds a city at once* on the new-city screen's defaults (river, normal, a random name
+  and seed, the player's disasters and elections settings), shown under Play only while there are no saves.
+- *Short lines kept where they say something the name doesn't*: the three groups list what's inside; Load (how
+  many saved), Scenarios, Learn, Play with friends, Quick match, My buildings and the map editor (its phone note
+  kept) keep theirs; New city and Settings have none.
+- *The week's card* reads "This week: name · time left · top score n" (or "Weekly challenge: a new one every
+  Monday" before the board answers), dark glass with a trophy so it doesn't read as one more button.
+- *Install in the quiet row*: its old line ("Its own icon and window…") is now its tooltip; Safari's steps still
+  open under the row when it's pressed. Send an idea and Report a problem sit beside it with their icons.
+- *A phone held sideways shows two columns* (title and quiet row on the left, buttons and card on the right): with
+  the title above, only two buttons fitted on a 390 px tall screen.
+- *Keys*: the arrows (and Home/End) step through everything on the menu, top to bottom, the code field included;
+  going into a sub-menu focuses its first button (not the code field, which would bring up a phone's keyboard),
+  and coming back focuses the button that opened it.
+- *Tests*: every spec reaches a menu button through `clickMain`/`mainButton` (`e2e/helpers.ts`, table
+  `MAIN_MENU_HOME`), which opens the right sub-menu, or backs out to the main buttons for Continue, Settings, the
+  card and the quiet row; dev scripts use the same table in `scripts/dev/menu.mjs`. `e2e/menu-tidy.spec.ts` checks
+  the menu itself. No tutorial or lesson card points at a main-menu button (all their targets are in a city); the
+  words that named the old places (the tutorial's last card, the README, the Workshop guide) now say Play, Multiplayer
+  or Create.

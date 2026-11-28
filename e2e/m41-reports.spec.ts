@@ -1,7 +1,7 @@
 import { test, expect, type Browser, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { closeContextsAfterEach, newContext, openGame } from './helpers';
+import { closeContextsAfterEach, newContext, openGame, clickMain } from './helpers';
 
 /**
  * M41, hearing about problems, through the real interface against the local relay (started by the
@@ -255,7 +255,7 @@ test('the main menu says once what crash reports send, and opens Report a proble
   await page.screenshot({ path: `${OUT}/menu-notice.png` });
   await page.getByTestId('reports-notice-ok').click();
   await expect(notice).toHaveCount(0);
-  await page.getByTestId('main-report').click();
+  await clickMain(page, 'main-report');
   await expect(page.getByTestId('report-screen')).toBeVisible();
   // Nothing written and no picture: nothing to send yet.
   await expect(page.getByTestId('report-send')).toBeDisabled();

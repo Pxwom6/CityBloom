@@ -746,6 +746,8 @@ export interface TestApi {
   getShell(): {
     mode: 'menu' | 'play' | 'editor';
     screens: string[];
+    /** The main menu's open sub-menu (Menu tidy), or null for its main buttons. */
+    menu: 'play' | 'multiplayer' | 'create' | null;
     slot: string | null;
     settings: Record<string, unknown>;
     applied: {
@@ -1903,6 +1905,7 @@ export function installTestApi(game: Game): TestApi {
     getShell: () => ({
       mode: game.mode,
       screens: [...game.screens],
+      menu: game.menuSub,
       slot: game.slot,
       settings: { ...game.settings },
       applied: {

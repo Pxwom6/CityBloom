@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { auditButtons, shot, skipGraphicsCheck, watchErrors } from './helpers';
+import { auditButtons, shot, skipGraphicsCheck, watchErrors, clickMain } from './helpers';
 
 const shell = (page: Page) => page.evaluate(() => window.__game!.getShell());
 
@@ -75,7 +75,8 @@ test('Install: Chrome and Edge install from the main menu; opening a city asks t
   const install = page.getByTestId('main-install');
   expect(await offerInstall(page, 'dismissed')).toBe(true);
   await expect(install).toBeVisible();
-  await expect(page.getByTestId('install-note')).toHaveText('Its own icon and window, like any other app');
+  // Install sits in the menu's quiet row (Menu tidy): what it does is its tooltip.
+  await expect(install).toHaveAttribute('title', 'Its own icon and window, like any other app');
   expect((await shell(page)).app.install).toBe('prompt');
   expect(await auditButtons(page, 'main menu')).toEqual([]);
   // Turned down: an offer can be shown once, so the button goes until the next one.
@@ -97,13 +98,13 @@ test('Install: Chrome and Edge install from the main menu; opening a city asks t
   expect((await shell(page)).app).toMatchObject({ installed: true, install: null, saves: 'kept' });
 
   // The load screen says where cities are kept and how to move one.
-  await page.getByTestId('main-load').click();
+  await clickMain(page, 'main-load');
   await expect(page.getByTestId('saves-note')).toContainText('Cities are saved in this browser');
   await shot(page, 'install-load-note');
   await page.getByTestId('shell-back').click();
 
   // A new city (a page of its own) asks once it's open.
-  await page.getByTestId('main-new').click();
+  await clickMain(page, 'main-new');
   await page.getByTestId('new-name').fill('Keepsake');
   await page.getByTestId('new-tutorial').uncheck();
   await page.getByTestId('new-start').click();
@@ -139,7 +140,8 @@ test.describe('Safari', () => {
     expect(await auditButtons(page, 'main menu (Safari)')).toEqual([]);
     await shot(page, 'install-safari');
     await install.click();
-    await expect(note).toHaveText('Its own icon and window, like any other app');
+    await expect(install).toHaveAttribute('aria-expanded', 'false');
+    await expect(note).toHaveCount(0);
     expect(await asked(page)).toBe(0);
     errs.check();
   });

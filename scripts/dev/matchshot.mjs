@@ -10,6 +10,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { devices } from 'playwright';
 import { launchBrowser, QUALITY, SHADOWS } from './gpuLaunch.mjs';
+import { clickMain } from './menu.mjs';
 
 const out = process.argv[2] ?? 'shots/match';
 mkdirSync(out, { recursive: true });
@@ -230,7 +231,7 @@ for (let k = 0; k < PLAYERS; k++) pages.push(await player(k));
 // The Quick match screen from the main menu.
 await pages[0].goto(base);
 await ready(pages[0]);
-await pages[0].getByTestId('main-match').click();
+await clickMain(pages[0], 'main-match');
 await pages[0].getByTestId('match-screen').waitFor();
 await pages[0].screenshot({ path: `${out}/screen.png` });
 const q = new URLSearchParams({

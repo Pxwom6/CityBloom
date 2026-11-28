@@ -19,6 +19,7 @@ import { MAP_PRESETS } from '../data/world';
 import { isPhone } from '../game';
 import { monthsText } from './Scenario';
 import { useGame, useGameUpdates } from './hooks';
+import { IconTrophy } from './icons';
 
 /**
  * The weekly challenge (M44): its entry on the main menu, its screen (the challenge, Play, the board:
@@ -67,23 +68,38 @@ function useChallengeNow(): { now: ChallengeNow | null; left: number | null } {
   return { now, left };
 }
 
-/** The main menu's entry: the challenge's name, the time left and the top score. */
-export function ChallengeMenuButton() {
+/**
+ * The main menu's card for the week (Menu tidy): the challenge's name, the time left and the top
+ * score, under the main buttons rather than one of them. Clicking it opens the challenge.
+ */
+export function ChallengeMenuCard() {
   const game = useGame();
   const { now, left } = useChallengeNow();
+  const going = left !== null && left > 0;
   return (
     <button
-      class="shell-btn challenge-btn"
+      class="menu-card"
       data-testid="main-challenge"
       title="The same challenge for everyone this week: play it as often as you like, your best score counts"
       onClick={() => game.openScreen('challenge')}
     >
-      <span>This week’s challenge</span>
-      <small data-testid="main-challenge-line">
-        {now
-          ? `${now.def.name} · ${left !== null && left > 0 ? `${timeLeftWords(left)} left` : 'a new one is coming'}${now.top ? ` · top ${fmt(now.top.score)}` : ''}`
-          : 'a new one every Monday'}
-      </small>
+      <IconTrophy class="menu-card-icon" />
+      <span class="menu-card-text" data-testid="main-challenge-line">
+        {now ? (
+          <>
+            <b>This week:</b> {now.def.name}
+            {` · ${going ? `${timeLeftWords(left!)} left` : 'a new one is coming'}`}
+            {now.top ? ` · top score ${fmt(now.top.score)}` : ''}
+          </>
+        ) : (
+          <>
+            <b>Weekly challenge:</b> a new one every Monday
+          </>
+        )}
+      </span>
+      <span class="menu-card-go" aria-hidden="true">
+        ›
+      </span>
     </button>
   );
 }

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { shot, watchErrors } from './helpers';
+import { shot, watchErrors, clickMain } from './helpers';
 import { frames, openScenario, pauseMenu, placeFromToolbar, screen, settings, state, untilHour } from './ui';
 
 test('M22: Long Winter through the UI: the weather panel, locked settings, a coal plant and a depot from the toolbar, snow and ploughs', async ({
@@ -268,7 +268,7 @@ test('M22: a new city takes its climate from the map, and seasons and weather fr
   const errs = watchErrors(page);
   await settings(page, { seasons: false, weather: 1 });
   await page.goto('./');
-  await page.getByTestId('main-new').click();
+  await clickMain(page, 'main-new');
   await expect(page.getByTestId('new-climate')).toContainText('Temperate climate');
   await page.getByTestId('preset-highlands').click();
   await expect(page.getByTestId('new-climate')).toContainText('Alpine climate');

@@ -5,6 +5,7 @@
 // `--gpu` draws in a headed Chrome window on the real GPU (phase 3: true colours, in summer, clear).
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
+import { clickMain } from './menu.mjs';
 
 const gpu = process.argv.includes('--gpu');
 const [file, out, hourArg, yawArg, distArg, tiltArg] = process.argv.slice(2).filter((a) => a !== '--gpu');
@@ -36,7 +37,7 @@ try {
     ),
   );
   await page.goto('http://localhost:4197/');
-  await page.getByTestId('main-load').click({ timeout: 120_000 });
+  await clickMain(page, 'main-load', { timeout: 120_000 });
   await Promise.all([page.waitForURL(/\?load=/), page.getByTestId('import-file').setInputFiles(file)]);
   await page.waitForFunction(() => window.__game?.ready && window.__game.getShell().mode === 'play', null, {
     timeout: 180_000,

@@ -6,6 +6,7 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
+import { clickMain } from './menu.mjs';
 
 const out = process.argv[2] ?? 'shots/owner';
 mkdirSync(out, { recursive: true });
@@ -111,7 +112,7 @@ await game.waitForSelector('[data-testid=main-menu]', { timeout: 120_000 });
 await game.waitForTimeout(3000);
 await game.screenshot({ path: `${out}/menu-notice.png` });
 await game.click('[data-testid=reports-notice-ok]');
-await game.click('[data-testid=main-report]');
+await clickMain(game, 'main-report');
 await game.fill(
   '[data-testid=report-note]',
   'The tram stopped in the middle of the junction and never moved again.',

@@ -1,6 +1,6 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
-import { closeContextsAfterEach, newContext, skipGraphicsCheck } from './helpers';
+import { closeContextsAfterEach, newContext, skipGraphicsCheck, clickMain } from './helpers';
 import { placeFromToolbar } from './ui';
 
 /**
@@ -103,7 +103,7 @@ test('every Learn lesson, played on its town from the main menu', async ({ brows
   const page = await player(browser);
   await page.goto('./');
   await expect(page.getByTestId('main-menu')).toBeVisible({ timeout: 90_000 });
-  await page.getByTestId('main-learn').click();
+  await clickMain(page, 'main-learn');
   await expect(page.getByTestId('learn-screen')).toBeVisible();
   // Making buildings is the Workshop's lesson since M47 (played through in e2e/m47-workshop.spec.ts).
   await expect(page.getByTestId('lesson-start-buildings')).toBeEnabled();

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { closeContextsAfterEach } from './helpers';
+import { closeContextsAfterEach, clickMain, mainButton } from './helpers';
 import { phone, phoneProblems, type Orient } from './phone';
 import { frames } from './ui';
 
@@ -74,8 +74,8 @@ for (const [device, orient, play] of cases) {
       });
       await page.goto('./');
       await ready(page, 'menu');
-      await expect(page.getByTestId('main-challenge-line')).toContainText('left');
-      await page.getByTestId('main-challenge').tap();
+      await expect(await mainButton(page, 'main-challenge-line')).toContainText('left');
+      await clickMain(page, 'main-challenge', { tap: true });
       await expect(page.getByTestId('challenge-detail')).toBeVisible();
       await check(page, '[data-testid=challenge-screen]', `${tag} challenge screen`);
       await page.getByTestId('board-tab-friends').tap();

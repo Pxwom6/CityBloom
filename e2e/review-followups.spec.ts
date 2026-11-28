@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { closeContextsAfterEach, newContext } from './helpers';
+import { closeContextsAfterEach, newContext, clickMain } from './helpers';
 
 closeContextsAfterEach();
 
@@ -26,7 +26,7 @@ test('F4: backing out of the lobby leaves the next new city your own', async ({ 
   test.setTimeout(240_000);
   await page.setViewportSize({ width: 1100, height: 720 });
   await menu(page);
-  await page.getByTestId('main-friends').click();
+  await clickMain(page, 'main-friends');
   await page.getByTestId('friends-name').fill('Ada');
   // No saved city in this browser: Host founds a new one, and the new-city screen says it's shared.
   await page.getByTestId('friends-host-p2p').click();
@@ -42,7 +42,7 @@ test('F4: backing out of the lobby leaves the next new city your own', async ({ 
   expect((await shell(page)).newCity).toEqual({ host: null, region: null });
 
   // A new city from the main menu is the player's own: not shared, not in a region.
-  await page.getByTestId('main-new').click();
+  await clickMain(page, 'main-new');
   await expect(page.getByTestId('new-game')).toBeVisible();
   await expect(page.getByTestId('new-sharing')).toHaveCount(0);
   const nav = page.waitForRequest(

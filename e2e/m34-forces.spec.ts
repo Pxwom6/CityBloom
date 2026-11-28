@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { buildTownViaApi, openGame, shot, skipGraphicsCheck, watchErrors } from './helpers';
+import { buildTownViaApi, openGame, shot, skipGraphicsCheck, watchErrors, clickMain } from './helpers';
 import { frames, placeFromToolbar, screen, settings, state } from './ui';
 
 /**
@@ -48,7 +48,7 @@ test('M34: the new-city screen founds a city with rival neighbours', async ({ pa
   await settings(page, { quality: 'low' });
   await page.goto('./');
   await page.waitForFunction(() => window.__game?.getShell().mode === 'menu', null, { timeout: 120_000 });
-  await page.getByTestId('main-new').click();
+  await clickMain(page, 'main-new');
   const rivals = page.getByTestId('new-rivals');
   await expect(rivals).not.toBeChecked();
   await rivals.check();

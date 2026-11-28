@@ -7,6 +7,7 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { chromium, devices } from 'playwright';
+import { clickMain } from './menu.mjs';
 
 const out = process.argv[2] ?? 'phone-panels';
 const arg = (name, d) => {
@@ -79,12 +80,12 @@ async function tapThing(page, kind) {
 /** Each scene: where it starts (a URL), and how to open it. */
 const SCENES = [
   ['menu', '', 'menu', async () => {}],
-  ['new-city', '', 'menu', (p) => tap(p, 'main-new')],
-  ['friends', '', 'menu', (p) => tap(p, 'main-friends')],
-  ['learn', '', 'menu', (p) => tap(p, 'main-learn')],
-  ['scenarios', '', 'menu', (p) => tap(p, 'main-scenarios')],
-  ['load', '', 'menu', (p) => tap(p, 'main-load')],
-  ['settings-menu', '', 'menu', (p) => tap(p, 'main-settings')],
+  ['new-city', '', 'menu', (p) => clickMain(p, 'main-new', { tap: true })],
+  ['friends', '', 'menu', (p) => clickMain(p, 'main-friends', { tap: true })],
+  ['learn', '', 'menu', (p) => clickMain(p, 'main-learn', { tap: true })],
+  ['scenarios', '', 'menu', (p) => clickMain(p, 'main-scenarios', { tap: true })],
+  ['load', '', 'menu', (p) => clickMain(p, 'main-load', { tap: true })],
+  ['settings-menu', '', 'menu', (p) => clickMain(p, 'main-settings', { tap: true })],
   ['editor', '?editor=new&seed=phone', 'editor', async () => {}],
   ['city', 'town', 'play', async () => {}],
   ['build', 'town', 'play', (p) => tap(p, 'tool-build')],
@@ -222,7 +223,7 @@ try {
       try {
         if (url === 'town') {
           await open(page, '', 'menu');
-          await tap(page, 'main-load');
+          await clickMain(page, 'main-load', { tap: true });
           await Promise.all([
             page.waitForURL(/\?load=/),
             page.getByTestId('import-file').setInputFiles('Saves/Town20k.citybloom'),

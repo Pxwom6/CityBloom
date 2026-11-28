@@ -1,5 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
-import { auditButtons, buildTownViaApi, openGame, serveTownViaApi, shot, watchErrors } from './helpers';
+import {
+  auditButtons,
+  buildTownViaApi,
+  openGame,
+  serveTownViaApi,
+  shot,
+  watchErrors,
+  clickMain,
+} from './helpers';
 
 /**
  * Every visible button in the interface says what it does: it has a label or accessible name, and
@@ -75,18 +83,18 @@ test('every visible button has a readable label or accessible name, across the i
   expect(planted.some((p) => p.includes('"Bulldoze" is unreadable'))).toBe(true);
   await page.evaluate(() => document.getElementById('probe')!.remove());
   await check('main menu');
-  await page.getByTestId('main-settings').click();
+  await clickMain(page, 'main-settings');
   await check('settings (main menu)');
   await page.getByTestId('shell-back').click();
-  await page.getByTestId('main-new').click();
+  await clickMain(page, 'main-new');
   await check('new city');
   await page.getByTestId('shell-back').click();
-  await page.getByTestId('main-load').click();
+  await clickMain(page, 'main-load');
   await check('load city (empty)');
   await page.getByTestId('shell-back').click();
 
   // The map editor (M24): its screen, the editor with a brush in hand, and the playability check.
-  await page.getByTestId('main-editor').click();
+  await clickMain(page, 'main-editor');
   await check('map editor screen');
   await page.getByTestId('maps-base-flat').click();
   await page.getByTestId('maps-new').click();

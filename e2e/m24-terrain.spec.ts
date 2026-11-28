@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { buildTownViaApi, serveTownViaApi, shot, watchErrors } from './helpers';
+import { buildTownViaApi, serveTownViaApi, shot, watchErrors, clickMain } from './helpers';
 import { frames, openScenario, screen, settings, settledHint, state } from './ui';
 
 const hash = (page: Page) => page.evaluate(() => window.__game!.hash());
@@ -231,7 +231,7 @@ test('M24: the map editor from the main menu: brushes, entries, the check, save 
   await page.waitForFunction(() => window.__game?.ready && window.__game.getShell().mode === 'menu', null, {
     timeout: 120_000,
   });
-  await page.getByTestId('main-editor').click();
+  await clickMain(page, 'main-editor');
   await expect(page.getByTestId('maps-screen')).toBeVisible();
   await page.getByTestId('maps-base-flat').click();
   await page.getByTestId('maps-name').fill('Flatwater');
@@ -341,7 +341,7 @@ test('M24: the map editor from the main menu: brushes, entries, the check, save 
   await page.waitForFunction(() => window.__game?.ready && window.__game.getShell().mode === 'menu', null, {
     timeout: 120_000,
   });
-  await page.getByTestId('main-new').click();
+  await clickMain(page, 'main-new');
   const mine = page.locator('[data-testid^="newmap-m"]').filter({ hasText: 'Flatwater' });
   await expect(mine).toHaveCount(1);
   await page.getByTestId('newmap-input').setInputFiles(path);

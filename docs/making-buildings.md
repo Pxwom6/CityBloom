@@ -12,8 +12,8 @@ building standing in your town. You don't need to have made a 3D model before.
 
 **What you need**
 
-- The game, open in a city (or the **Making your own buildings** lesson on the main menu's Learn page,
-  which opens a small town with the Workshop ready).
+- The game, open in a city (or main menu → **Create** → **My buildings**, which opens a small town with
+  the Workshop ready; the **Making your own buildings** lesson under **Play** → **Learn** walks you through it).
 - One of these to make the model:
   - an **AI 3D tool** that can make GLB files (the game's own buildings are made in Claude Design);
   - or **Blender**, which is free (blender.org), if you'd like to build it by hand.

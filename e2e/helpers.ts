@@ -4,6 +4,7 @@ import {
   type Browser,
   type BrowserContext,
   type BrowserContextOptions,
+  type Locator,
   type Page,
 } from '@playwright/test';
 
@@ -260,4 +261,56 @@ export async function auditButtons(page: Page, where: string): Promise<string[]>
     return out;
   });
   return problems.map((p) => `${where}: ${p}`);
+}
+
+/** The sub-menu each main-menu button sits in since the menu was tidied (Menu tidy); others are on the main level. */
+export const MAIN_MENU_HOME: Record<string, 'play' | 'multiplayer' | 'create'> = {
+  'main-new': 'play',
+  'main-load': 'play',
+  'main-scenarios': 'play',
+  'main-learn': 'play',
+  'main-friends': 'multiplayer',
+  'main-match': 'multiplayer',
+  'main-join-code': 'multiplayer',
+  'main-join': 'multiplayer',
+  'main-buildings': 'create',
+  'main-editor': 'create',
+};
+
+/**
+ * A main-menu button by its test id, with the menu showing the level it sits on: its sub-menu (Play,
+ * Multiplayer or Create) opened first, or, for Continue, Settings, the week's card and the quiet row,
+ * the main buttons (backing out of a sub-menu left open). `tap` presses by touch.
+ */
+export async function mainButton(
+  page: Page,
+  id: string,
+  opts: { tap?: boolean; timeout?: number } = {},
+): Promise<Locator> {
+  const menu = page.getByTestId('main-menu');
+  await expect(menu).toBeVisible({ timeout: opts.timeout ?? 90_000 });
+  const want = MAIN_MENU_HOME[id] ?? '';
+  const press = (l: Locator) => (opts.tap ? l.tap() : l.click());
+  const open = (await menu.getAttribute('data-sub')) ?? '';
+  if (open !== want) {
+    if (open) {
+      await press(page.getByTestId('main-back'));
+      await expect(menu).toHaveAttribute('data-sub', '');
+    }
+    if (want) {
+      await press(page.getByTestId(`main-${want}`));
+      await expect(menu).toHaveAttribute('data-sub', want);
+    }
+  }
+  return page.getByTestId(id);
+}
+
+/** Click (or tap) a main-menu button by its test id, through its sub-menu. */
+export async function clickMain(
+  page: Page,
+  id: string,
+  opts: { tap?: boolean; timeout?: number } = {},
+): Promise<void> {
+  const button = await mainButton(page, id, opts);
+  await (opts.tap ? button.tap() : button.click());
 }

@@ -31,7 +31,7 @@ the open-source libraries).
 
 Once GitHub Pages is on for this repository (see the top of `PROGRESS.md`), every push to `main`
 publishes the game at **https://pxwom6.github.io/CityBloom/**. It's an installable app: after one
-visit it plays offline, **Install Citybloom** on the main menu (Chrome and Edge; in Safari, File →
+visit it plays offline, **Install** in the main menu's bottom row (Chrome and Edge; in Safari, File →
 Add to Dock, or Share → Add to Home Screen on iPhone and iPad) puts it in a window of its own, and
 when a new version is out the game offers to reload into it, saving your city first. Saves stay in
 your browser across updates, and the game asks the browser to keep them; export them from the load
@@ -46,7 +46,7 @@ found by its code (six characters for an online one; one on someone's computer h
 like `A7KQ2M-BCDF-GHJK-MNPQ`, which the invite link carries), and nobody sees anything about you but
 the name and colour you choose.
 
-- **One city together (co-op, up to 8).** Main menu → **Play with friends**: pick a name and a
+- **One city together (co-op, up to 8).** Main menu → **Multiplayer** → **Play with friends** (or type a friend's code straight into **Join with a code** there): pick a name and a
   colour, then **Host online** (the city lives in an online room on Cloudflare and waits there between
   sessions) or **Host on this computer** (your browser is the room; friends play while you're there). Or, in a
   city you're already playing, pause (Escape) → **Invite friends**. Send your friends the invite
@@ -67,7 +67,7 @@ the name and colour you choose.
 
 ### Quick match
 
-A short game against your mates, the length of a lunch break. Main menu → **Quick match**: the host
+A short game against your mates, the length of a lunch break. Main menu → **Multiplayer** → **Quick match**: the host
 picks **Race** (first to 5,000, 10,000 or 15,000 residents), **Rich list**, **Happy town** or **Mixed**,
 a 15-, 20- or 30-minute timer and a map, then hosts online or on their own computer; two to four friends
 join by the code or the invite link. Everyone founds their own small city on the same map, side by side,
@@ -84,7 +84,7 @@ A player who leaves is out and the match goes on; online, if the host leaves, so
 
 Every Monday (midnight in Adelaide) there's a new challenge, the same for everyone: a map, goals, a
 twist (a tight budget, no city highways, an early disaster, rail only or a small map) and four years.
-Main menu → **This week's challenge** shows it with the time left and the top score. Play it as often as
+The card under the main menu's buttons shows it with the time left and the top score. Play it as often as
 you like; the city ends on a card with your score, and **Post score** puts it on the board with the name
 you choose. The **Friends** tab keeps a board just for your group: make one and share its code. Every
 score on the board is checked by replaying its run, and **Watch** replays anyone's city, at any speed or
@@ -171,11 +171,12 @@ produced, so any change makes a new version.
 
 ## Play
 
-The main menu opens over a small town that keeps living in the background. Choose **New city**,
+The main menu opens over a small town that keeps living in the background. Choose **Play** → **New city**
+(a first-timer can press **Start with the tutorial** under Play instead),
 pick a map (river, coast, lakes or highlands, or one of your own from the map editor), a seed, a difficulty, and whether you want sandbox
 money, random disasters or elections. The tutorial is on for your first city: eighteen short steps to a
 town of 1,000, an arrow at the button to press, the camera flying to what matters, and a first fire, power
-cut or jam explained the moment it happens. **Learn** on the main menu has short lessons on small towns
+cut or jam explained the moment it happens. **Learn** (main menu → **Play**) has short lessons on small towns
 made for them (traffic, money, services, disasters, districts, friends, war, making buildings). The basics:
 
 1. **Roads** off the highway: drag to draw a straight road, or click point to point to keep going;
@@ -256,7 +257,7 @@ through town to the sights; the region traffic map shows where they and the comm
 and smooths the ground with a round brush, paid for by the cubic metre: level a hillside before
 building on it and far more of its lots can be built on, or cut a pass through a ridge for a road.
 Roads and buildings hold the ground they stand on, water is left alone, and a drag undoes in one
-step. The **map editor** (from the main menu) makes maps of your own: start from a generated map or
+step. The **map editor** (main menu → **Create**) makes maps of your own: start from a generated map or
 flat meadow, sculpt hills and valleys, paint rivers, lakes and sea, plant forests, lay ore and oil,
 say where the highway and railway come in and pick the climate. A playability check says whether a
 first town has room by the highway (and what to fix if not); playable maps appear on the new-city
@@ -281,7 +282,7 @@ where the city stood when you made it. A win brings the region's grant and a yea
 loss never ends the game, but the council blocks tax rises and new loans for a year. There are
 none in sandbox, and Settings can switch them off.
 
-**Scenarios** (from the main menu) are seventeen set challenges, each a ready-made city with goals, limits
+**Scenarios** (main menu → **Play**) are seventeen set challenges, each a ready-made city with goals, limits
 and a time limit: grow a town to 10,000 on clean power alone, pay off a spendthrift mayor's loans,
 win back a town before it votes, open a stadium without borrowing, untangle a gridlocked town,
 unjam a town that queues at one crossroads, put an ironworks' freight on the train, clear the smoke

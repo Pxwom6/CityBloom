@@ -10,6 +10,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { devices } from 'playwright';
 import { launchBrowser, QUALITY, SHADOWS } from './gpuLaunch.mjs';
+import { clickMain } from './menu.mjs';
 
 const out = process.argv[2] ?? 'shots/challenge';
 mkdirSync(out, { recursive: true });
@@ -153,7 +154,7 @@ await a.page.goto(GAME);
 await ready(a.page, 'menu');
 await a.page.getByTestId('main-challenge-line').filter({ hasText: 'left' }).waitFor();
 await shot(a.page, 'menu');
-await a.page.getByTestId('main-challenge').click();
+await clickMain(a.page, 'main-challenge');
 await a.page.getByTestId('challenge-detail').waitFor();
 await shot(a.page, 'screen');
 // The first player makes a group for the friends board.

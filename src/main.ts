@@ -30,6 +30,7 @@ import { Multiplayer } from './net/multiplayer';
 import type { SimDriver } from './net/driver';
 import { loadProfile, regionRejoin, storedProfile } from './client/profile';
 import { askName } from './ui/JoinPrompt';
+import { menuSubFromHistory } from './ui/Shell';
 import { planMatch, type MatchPlan } from './client/matchBoot';
 import { relayUrl, signalling } from './net/multiplayer';
 import { webSocketLink } from './net/link';
@@ -282,6 +283,7 @@ async function boot(): Promise<void> {
     'visit',
     'battle',
     'lesson',
+    'workshop',
     'match',
     'challenge',
     'challengeRun',
@@ -332,6 +334,8 @@ async function boot(): Promise<void> {
   const scenario = SCENARIO.get(params.get('scenario') ?? '');
   // One of Learn's lessons (M42): its prepared town, shipped beside the game too.
   const lesson = LESSON.get(params.get('lesson') ?? '');
+  // Create → My buildings (Menu tidy): the Workshop lesson's small town, without the lesson, never saved.
+  const workshopTown = params.get('workshop') === '1' ? LESSON.get('buildings') : undefined;
   const found = visited
     ? visited
     : battleTown
@@ -345,9 +349,11 @@ async function boot(): Promise<void> {
           ? await shippedSave(`scenarios/${scenario.save}`)
           : lesson?.save
             ? await shippedSave(`lessons/${lesson.save}`)
-            : menu
-              ? await shippedSave('demo.citybloom')
-              : null;
+            : workshopTown?.save
+              ? await shippedSave(`lessons/${workshopTown.save}`)
+              : menu
+                ? await shippedSave('demo.citybloom')
+                : null;
   const opened =
     found &&
     (await client.load(found, IS_TEST_BUILD).catch((err: unknown) => {
@@ -500,13 +506,19 @@ async function boot(): Promise<void> {
   } else if (menu || joinError) {
     game.mode = 'menu';
     game.openScreen('main');
-    if (params.get('screen') === 'scenarios') game.openScreen('scenarios');
-    if (params.get('screen') === 'learn') game.openScreen('learn');
-    if (params.get('screen') === 'challenge') game.openScreen('challenge');
+    // Where the player was on the main menu (Menu tidy): the sub-menu this step of history was in
+    // (a reload, or Back from a city opened from it), or the one a screen in the address sits in.
+    game.menuSub = menuSubFromHistory();
+    const screen = params.get('screen');
+    if (screen === 'scenarios' || screen === 'learn') game.menuSub ??= 'play';
+    if (screen === 'scenarios') game.openScreen('scenarios');
+    if (screen === 'learn') game.openScreen('learn');
+    if (screen === 'challenge') game.openScreen('challenge');
     // A region's invite link: the friends screen, to choose the city to bring (M32).
     const invited = params.get('region') ? parseInvite(params.get('region')!) : null;
     if (invited && !inviteProblem(invited)) {
       game.pendingRegion = formatInvite(invited);
+      game.menuSub ??= 'multiplayer';
       game.openScreen('friends');
       history.replaceState(null, '', location.pathname);
     }
@@ -538,9 +550,26 @@ async function boot(): Promise<void> {
       game.startLesson(lesson.id);
     } else if (lesson)
       game.toast('That lesson’s town couldn’t be opened; here is a fresh map instead.', 'bad', 6000);
+    // My buildings from the main menu (Menu tidy): a small town to make and try buildings in, kept out
+    // of the saves like a lesson's; My buildings opens on the player's models, or the Workshop if none.
+    if (workshopTown && save) {
+      game.slot = null;
+      game.lessonTown = true;
+      void game.buildings.ready.then(() => {
+        if (!game.buildings.list().length) return game.openWorkshop();
+        game.buildingsTab = 'mine';
+        game.openPanel('buildings');
+      });
+      game.toast(
+        'A small town to make and try your buildings in. It isn’t saved; your buildings are kept for all your cities.',
+        'info',
+        9000,
+      );
+    } else if (workshopTown)
+      game.toast('The Workshop’s town couldn’t be opened; here is a fresh map instead.', 'bad', 6000);
     // The city's timelapse (M45): a new city's from its founding; a saved one under the key its save
     // keeps, or (saved before timelapses, or on another device) from now. Never a lesson's town.
-    if (!lesson) void game.timelapse.begin(save?.meta.timelapse ?? null, !save);
+    if (!lesson && !workshopTown) void game.timelapse.begin(save?.meta.timelapse ?? null, !save);
     // The players' own models the city's buildings wear (M46), checked and kept as a friend's would be.
     if (save?.meta.models) void game.buildings.ready.then(() => game.buildings.adopt(save.meta.models));
     // A new city takes the player's seasons and weather settings (M22); saves and scenarios keep theirs.
@@ -555,7 +584,7 @@ async function boot(): Promise<void> {
       game.scenarioBrief = true;
       game.setSpeed(0);
     }
-    if (params.has('new') || params.has('load') || scenario || lesson || challengePlay)
+    if (params.has('new') || params.has('load') || scenario || lesson || workshopTown || challengePlay)
       history.replaceState(null, '', location.pathname);
     // Back from a battle this browser doesn't keep (M35).
     if (params.get('noreplay') === '1')

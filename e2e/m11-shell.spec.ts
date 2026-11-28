@@ -1,5 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
-import { buildTownViaApi, serveTownViaApi, shot, skipGraphicsCheck, watchErrors } from './helpers';
+import {
+  buildTownViaApi,
+  serveTownViaApi,
+  shot,
+  skipGraphicsCheck,
+  watchErrors,
+  clickMain,
+  mainButton,
+} from './helpers';
 
 /** Wait for the game on a freshly loaded page to be up, in the given mode. */
 async function booted(page: Page, mode: 'menu' | 'play') {
@@ -26,13 +34,15 @@ test('M11: main menu → new city → save → quit → reload → continue; set
   await page.goto('./');
   await booted(page, 'menu');
   await expect(page.getByTestId('main-menu')).toBeVisible();
-  await expect(page.getByTestId('main-new')).toBeVisible();
+  // The tidied menu (Menu tidy): Play first and primary for a new player, the tutorial under it.
+  await expect(page.getByTestId('main-play')).toHaveClass(/primary/);
+  await expect(page.getByTestId('main-tutorial')).toBeVisible();
   await expect(page.getByTestId('main-continue')).toHaveCount(0);
   await expect(page.getByTestId('topbar')).toHaveCount(0);
   await shot(page, 'm11-main-menu');
 
   // Settings from the main menu apply at once.
-  await page.getByTestId('main-settings').click();
+  await clickMain(page, 'main-settings');
   await page.getByTestId('quality-medium').click();
   await page.getByTestId('set-shadows').uncheck();
   await page.getByTestId('draw-far').click();
@@ -48,7 +58,7 @@ test('M11: main menu → new city → save → quit → reload → continue; set
   await expect(page.getByTestId('main-menu')).toBeVisible();
 
   // New city: name, map, seed, difficulty; the tutorial is on for a first city.
-  await page.getByTestId('main-new').click();
+  await clickMain(page, 'main-new');
   await page.getByTestId('new-name').fill('Testhaven');
   await page.getByTestId('preset-lakes').click();
   await page.getByTestId('new-seed').fill('m11');
@@ -110,10 +120,10 @@ test('M11: main menu → new city → save → quit → reload → continue; set
   await expect(page.getByTestId('main-menu')).toBeVisible({ timeout: 90_000 });
   await page.reload();
   await booted(page, 'menu');
-  await expect(page.getByTestId('main-continue')).toContainText('Testhaven');
+  await expect(await mainButton(page, 'main-continue')).toContainText('Testhaven');
 
   // Both saves are listed; export the named one to a file.
-  await page.getByTestId('main-load').click();
+  await clickMain(page, 'main-load');
   const list = page.getByTestId('slot-list');
   await expect(list).toContainText('Before the bridge');
   await expect(list).toContainText('Autosave');
@@ -128,7 +138,7 @@ test('M11: main menu → new city → save → quit → reload → continue; set
   await page.getByTestId('shell-back').click();
 
   // Continue: the same city, exactly as it was saved; the settings are still in force.
-  await page.getByTestId('main-continue').click();
+  await clickMain(page, 'main-continue');
   await expect(page.getByTestId('topbar')).toBeVisible({ timeout: 90_000 });
   await booted(page, 'play');
   expect(await page.evaluate(() => window.__game!.hash())).toBe(hash);

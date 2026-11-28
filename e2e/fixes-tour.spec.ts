@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { buildTownViaApi, serveTownViaApi, shot, skipGraphicsCheck, watchErrors } from './helpers';
+import { buildTownViaApi, serveTownViaApi, shot, skipGraphicsCheck, watchErrors, clickMain } from './helpers';
 import { frames, screen, state } from './ui';
 
 /**
@@ -43,7 +43,7 @@ test('Playthrough fixes: Kestrel Bend through the UI, touching every fixed area 
       timeout: 90_000,
     },
   );
-  await page.getByTestId('main-new').click();
+  await clickMain(page, 'main-new');
   await page.getByTestId('new-name').fill('Kestrel Bend');
   await page.getByTestId('preset-river').click();
   await page.getByTestId('new-seed').fill('usnpp7');

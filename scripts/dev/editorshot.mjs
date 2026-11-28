@@ -4,6 +4,7 @@
 // Usage: node scripts/dev/editorshot.mjs outDir   (after npm run build:test)
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
+import { clickMain } from './menu.mjs';
 const out = process.argv[2];
 const server = spawn('npx', ['vite', 'preview', '--outDir', 'dist-test', '--port', '4189', '--strictPort'], {
   stdio: 'ignore',
@@ -26,7 +27,7 @@ try {
   await page.waitForFunction(() => window.__game?.ready && window.__game.getShell().mode === 'menu', null, {
     timeout: 120000,
   });
-  await page.getByTestId('main-editor').click();
+  await clickMain(page, 'main-editor');
   await page.getByTestId('maps-base-coast').click();
   await page.getByTestId('maps-seed').fill('edit');
   await page.getByTestId('maps-name').fill('Test Bay');
@@ -119,7 +120,7 @@ try {
   await page.waitForFunction(() => window.__game?.ready && window.__game.getShell().mode === 'menu', null, {
     timeout: 120000,
   });
-  await page.getByTestId('main-new').click();
+  await clickMain(page, 'main-new');
   const mine = page.locator('[data-testid^="newmap-m"]').first();
   await mine.click();
   await page.waitForTimeout(800);

@@ -235,8 +235,8 @@ export const TUTORIAL: TutorialStep[] = [
     id: 'finish',
     title: 'A thousand people!',
     text:
-      'Well done, Mayor. From here: bigger buildings unlock as you grow. Try Scenarios, or Learn on the ' +
-      'main menu for short lessons on traffic, money and more.',
+      'Well done, Mayor. From here: bigger buildings unlock as you grow. Try Scenarios, or Learn (both under ' +
+      'Play on the main menu) for short lessons on traffic, money and more.',
     pause: true,
   },
 ];

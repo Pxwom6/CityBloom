@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
-import { closeContextsAfterEach, newContext, skipGraphicsCheck, watchErrors } from './helpers';
+import { closeContextsAfterEach, newContext, skipGraphicsCheck, watchErrors, clickMain } from './helpers';
 
 /**
  * M42, learning to play, through the real interface: the whole first-city tutorial from the main menu
@@ -149,7 +149,7 @@ test('the first-city tutorial from the main menu to 1,000 residents', async ({ b
   const log = (m: string) => console.log(`[m42] ${m}`);
   await page.goto('./');
   await expect(page.getByTestId('main-menu')).toBeVisible({ timeout: 90_000 });
-  await page.getByTestId('main-new').click();
+  await clickMain(page, 'main-new');
   await page.getByTestId('new-name').fill('Firstville');
   await page.getByTestId('preset-river').click();
   await page.getByTestId('new-seed').fill('maplewood');
@@ -414,7 +414,7 @@ test('leaving the tutorial, skipping a step, and picking it up again after a rel
   await expect(page.getByTestId('toast').last()).toContainText('Saved');
   await page.reload();
   await expect(page.getByTestId('main-menu')).toBeVisible({ timeout: 90_000 });
-  await page.getByTestId('main-continue').click();
+  await clickMain(page, 'main-continue');
   await page.waitForFunction(() => window.__game?.ready && window.__game.getShell().mode === 'play', null, {
     timeout: 90_000,
   });

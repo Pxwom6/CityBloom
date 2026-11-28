@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { closeContextsAfterEach } from './helpers';
+import { closeContextsAfterEach, clickMain } from './helpers';
 import { findSpot, frames, screen } from './ui';
 import { PLAYER_ROLES } from '../src/models/workshop';
 import { mistakeModels, testModels, goodModelParts, transformParts, writeGlb } from '../scripts/lib/makeGlb';
@@ -42,7 +42,7 @@ test('the Workshop, from Learn to a model placed in the town', async ({ page }) 
   });
   await page.goto('./');
   await expect(page.getByTestId('main-menu')).toBeVisible({ timeout: 90_000 });
-  await page.getByTestId('main-learn').click();
+  await clickMain(page, 'main-learn');
   await expect(page.getByTestId('lesson-buildings')).not.toContainText('Coming');
   await page.getByTestId('lesson-start-buildings').click();
   await page.waitForFunction(() => window.__game?.ready && window.__game.getShell().mode === 'play', null, {

@@ -4,6 +4,7 @@
 // Usage: npm run build:test && node scripts/dev/queueshot.mjs <save.citybloom> <out.png> [x z] [hour]
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
+import { clickMain } from './menu.mjs';
 
 const [file, out, xs, zs, hs] = process.argv.slice(2);
 const server = spawn('npx', ['vite', 'preview', '--outDir', 'dist-test', '--port', '4199', '--strictPort'], {
@@ -21,7 +22,7 @@ try {
     localStorage.setItem('citybloom.settings', JSON.stringify({ tips: false, graphicsChecked: true })),
   );
   await page.goto('http://localhost:4199/');
-  await page.getByTestId('main-load').click({ timeout: 120_000 });
+  await clickMain(page, 'main-load', { timeout: 120_000 });
   await Promise.all([page.waitForURL(/\?load=/), page.getByTestId('import-file').setInputFiles(file)]);
   await page.waitForFunction(() => window.__game?.ready && window.__game.getShell().mode === 'play', null, {
     timeout: 180_000,

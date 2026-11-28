@@ -2,6 +2,7 @@
 // Usage: npm run build:test && node scripts/dev/lodstats.mjs city.gz [--gpu]
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
+import { clickMain } from './menu.mjs';
 
 const file = process.argv[2];
 const gpu = process.argv.includes('--gpu');
@@ -26,7 +27,7 @@ try {
     localStorage.setItem('citybloom.settings', JSON.stringify({ tips: false, graphicsChecked: true })),
   );
   await page.goto(`http://localhost:${PORT}/`);
-  await page.getByTestId('main-load').click({ timeout: 120_000 });
+  await clickMain(page, 'main-load', { timeout: 120_000 });
   await Promise.all([page.waitForURL(/\?load=/), page.getByTestId('import-file').setInputFiles(file)]);
   await page.waitForFunction(() => window.__game?.ready && window.__game.getShell().mode === 'play', null, {
     timeout: 180_000,
